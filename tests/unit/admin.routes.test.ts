@@ -27,14 +27,15 @@ import {
   revokePlatformInstructor,
 } from '../../server/src/services/admin.service';
 
-it('restricts course model settings to Admins and rejects reserved-stage overrides', async () => {
+it('restricts course model settings to Admins and rejects unknown-step overrides', async () => {
   const courseId = new ObjectId();
   const url = `/api/admin/courses/${courseId}/models`;
   const body = { revision: 0, overrides: { reviewer: 'gpt-5.6-luna' } };
   expect((await request(makeApp()).get(url)).status).toBe(401);
   expect((await request(makeApp(userFixture(false))).put(url).send(body)).status).toBe(403);
   const admin = makeApp(userFixture(true));
-  expect((await request(admin).put(url).send({ ...body, overrides: { masteryEvaluator: 'gpt-5.6-luna' } })).status).toBe(400);
+  // 2026-11-23: every pipeline step, Mastery evaluator included, is a course step; unknown keys are not.
+  expect((await request(admin).put(url).send({ ...body, overrides: { validator: 'gpt-5.6-luna' } })).status).toBe(400);
   jest.mocked(saveAdminCourseModels).mockResolvedValue({ revision: 1 } as never);
   expect((await request(admin).put(url).send(body)).status).toBe(200);
   expect(saveAdminCourseModels).toHaveBeenCalledWith(courseId, 0, body.overrides, userFixture(true).puid);
@@ -179,6 +180,7 @@ describe('Admin model source contract', () => {
     reviewer: { model: 'gpt-6-luna', modelSource: 'environment' as const },
     masteryEvaluator: { model: 'gpt-6-luna', modelSource: 'environment' as const },
     utility: { model: 'gpt-6-luna', modelSource: 'environment' as const },
+    outlineOrganizer: { model: 'gpt-6-luna', modelSource: 'environment' as const },
   };
   const settings = { _id: 'platform' as const, models, costControls: { maxGenerationsPerDay: 10 },
     featureFlags: { layer2Evaluator: true, generationRepair: true },

@@ -8,10 +8,11 @@ import type {
 import { getPlatformSettings } from '../admin.service';
 import { createQuestion } from '../questions.service';
 import { updateContentRun, failContentRun, assertContentRunActive } from '../content-runs.service';
-import { withGenerationPreview } from '../generation-preview';
+import { withGenerationPreview, withQuestionPreview, type QuestionPreview } from '../generation-preview';
 import { courseCollection } from '../materials.service';
 import { shuffleOptions } from '../option-order.service';
 import { drawSeed } from '../params.service';
+import { operationContext } from '../operation-context';
 import { refreshQuestionSimilarity } from '../question-similarity.service';
 import { stepModelsFrom, type ResolvedStepModels } from '../step-models';
 import type { GenerationInput } from '../generation.service';
@@ -75,6 +76,8 @@ interface GenerateAndCheckInput {
   checkpoint: () => Promise<void>; item: number; onText?: (text: string) => void; preserveOptionOrder?: boolean;
   /** One repair call when the candidate fails deterministic checks or is rejected. */
   repair?: boolean;
+  onPreview?: (preview: QuestionPreview) => Promise<void>;
+  onReview?: () => void;
   /** Told before the repair call starts (live progress). */
   onRepair?: (trigger: RepairTrigger) => Promise<void>;
 }
@@ -115,6 +118,7 @@ async function inspectAndCheck(input: GenerateAndCheckInput, raw: GeneratorOutpu
   // Shuffled BEFORE the checker: it cites options by letter.
   const generated = input.type === 'mcq' && !input.preserveOptionOrder ? { ...clean, options: shuffleOptions(clean.options, drawSeed()) } : clean;
   await input.checkpoint();
+  input.onReview?.();
   let check: CheckerOutput;
   try {
     const { system, task } = CHECKER_PROMPT_PARTS({
@@ -176,7 +180,12 @@ function repairContext(evaluated: Evaluated): RegenerateContext {
  * a deterministic check or was rejected, keeping whichever version is better.
  * Two model calls, or four when repaired (spec 2026-11-12). */
 export async function generateAndCheck(input: GenerateAndCheckInput): Promise<CheckedCandidate> {
-  const first = await inspectAndCheck(input, await generateCandidate(input, 'generation', input.regenerate));
+  // Drain the last draft snapshot at the end of writing, before the checker
+  // starts. The final variant still depends on the checker and version check.
+  const raw = input.onPreview
+    ? await withQuestionPreview(input.item, onText => generateCandidate({ ...input, onText }, 'generation', input.regenerate), input.onPreview)
+    : await generateCandidate(input, 'generation', input.regenerate);
+  const first = await inspectAndCheck(input, raw);
   const trigger = input.repair ? repairTrigger(first) : undefined;
   let chosen = first;
   let repair: RepairRecord | undefined;
@@ -302,9 +311,18 @@ export async function runQuestionGeneration(input: GenerationInput, runId: Objec
 
 const noop = async () => undefined;
 
+export interface RegenerationObserver {
+  stage: (stage: 'retrieving' | 'generating' | 'reviewing') => void;
+  preview: (preview: QuestionPreview) => void;
+  checkpoint: () => Promise<void>;
+}
+
 /** Regenerate: the same two calls, carrying the original and its check verdict.
- * Returns an UNSAVED variant; the instructor's Replace saves it via the edit route. */
-export async function regenerateQuestionVariant(input: { questionId: ObjectId; courseId: ObjectId; prompt: string; byPuid: string }): Promise<{ variant: RegenerationVariant }> {
+ * Returns an unsaved variant; the instructor's Replace saves it via the edit route. */
+export async function regenerateQuestionVariant(
+  input: { questionId: ObjectId; courseId: ObjectId; prompt: string; byPuid: string },
+  observer?: RegenerationObserver,
+): Promise<{ variant: RegenerationVariant }> {
   const question = await questionsCol().findOne({ _id: input.questionId });
   if (!question || !question.courseId.equals(input.courseId)) throw new Error('question-not-found');
   const current = await questionVersionsCol().findOne({ _id: question.currentVersionId });
@@ -314,16 +332,23 @@ export async function regenerateQuestionVariant(input: { questionId: ObjectId; c
   if (!loId) throw new Error('question-has-no-lo');
   const lo = await losCol().findOne({ _id: loId });
   if (!lo || !lo.courseId.equals(question.courseId)) throw new Error('lo-not-in-course');
+  await observer?.checkpoint();
+  observer?.stage('retrieving');
   const models = stepModelsFrom(await getPlatformSettings(question.courseId));
   const secondary = await resolveSecondaryLos(question.courseId, lo, question.loIds.slice(1));
   const grounding = await retrieveChunks(courseCollection(question.courseId), question.courseId, lo, input.prompt, undefined, current.difficulty === 'hard', secondary);
   const [move] = assignMovesForBatch(current.difficulty, undefined, 1, current.type);
   const [slot] = allocateSlots({ count: 1, type: current.type, chunkCount: grounding.chunks.length, seed: input.questionId.toHexString(), hardnessMoves: [move] });
+  const existingStems = await loadExistingLoStems({ courseId: question.courseId, loIds: question.loIds, excludeQuestionId: input.questionId });
+  observer?.stage('generating');
   const checked = await generateAndCheck({
     type: current.type, difficulty: current.difficulty, loName: lo.name, secondaryLoNames: secondary.map(e => e.lo.name),
-    chunks: grounding.chunks, slot, item: 0, checkpoint: noop, models,
-    existingStems: await loadExistingLoStems({ courseId: question.courseId, loIds: question.loIds, excludeQuestionId: input.questionId }),
-    batchStems: [],
+    chunks: grounding.chunks, slot, item: 0, checkpoint: observer?.checkpoint ?? noop, models,
+    existingStems, batchStems: [],
+    ...(observer ? {
+      onPreview: async ({ stem, options, difficulty }) => observer.preview({ stem, options, difficulty }),
+      onReview: () => observer.stage('reviewing'),
+    } : {}),
     regenerate: { original: { stem: current.stem, options: current.options }, ...(question.agentDecision ? { agentDecision: question.agentDecision } : {}), instruction: input.prompt },
   });
   const variant: RegenerationVariant = {
@@ -334,8 +359,10 @@ export async function regenerateQuestionVariant(input: { questionId: ObjectId; c
     sourceRefs: checked.sourceRefs,
     agentDecision: agentDecisionFrom(checked.check, checked.numerics.failure),
   };
+  await observer?.checkpoint();
+  const operationId = operationContext.getStore();
   const update = await questionsCol().updateOne({ _id: input.questionId, currentVersionId: question.currentVersionId },
-    { $push: { regenerations: { prompt: input.prompt, at: new Date() } }, $set: { updatedAt: new Date() } });
+    { $push: { regenerations: { prompt: input.prompt, at: new Date(), ...(operationId ? { operationId } : {}) } }, $set: { updatedAt: new Date() } });
   if (update.matchedCount !== 1) throw new Error('question-changed-during-regeneration');
   return { variant };
 }

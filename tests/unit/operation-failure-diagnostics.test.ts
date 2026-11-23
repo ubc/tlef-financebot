@@ -77,6 +77,19 @@ it('does not classify a long-lived SSE connection as a pending request failure',
   operationAudit(req as never, res as never, jest.fn()); jest.advanceTimersByTime(30000); res.emit('close');
   expect(warn).not.toHaveBeenCalled(); expect(records).toHaveLength(0);
 });
+it('audits one-shot SSE POSTs and their terminal application failures', async () => {
+  const api = express();
+  api.use('/api', operationAudit);
+  api.post('/api/regenerate/:result', (req, res) => {
+    const failed = req.params.result === 'failed';
+    if (failed) res.locals.operationStreamError = 'question-changed-during-regeneration';
+    res.type('text/event-stream').end(failed ? 'event: error\n\n' : 'event: result\n\n');
+  });
+  await request(api).post('/api/regenerate/done').expect(200);
+  await request(api).post('/api/regenerate/failed').expect(200);
+  expect(records.map(({ outcome }) => outcome)).toEqual(['succeeded', 'failed']);
+  expect(records[1]).toMatchObject({ statusCode: 200, response: { error: 'question-changed-during-regeneration' } });
+});
 it('reports database failures and queue saturation with safe correlation metadata and no response changes', async () => {
   const event = { requestId: 'fixture', createdAt: new Date(), durationMs: 1, method: 'GET', route: '/api/questions', statusCode: 404, outcome: 'failed', targets: {}, input: {}, response: { error: 'private' } } as OperationEvent;
   const before = auditHealth().failedWrites;

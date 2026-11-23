@@ -374,6 +374,17 @@ commonly need:
 
 ## Current state
 
+- Structure generation reliability (2026-11-23, spec
+  `docs/superpowers/specs/2026-11-23-structure-generation-optimization-design.md`):
+  a structure run's conservative allowance is sized to its corpus (16,000 units
+  per section, between `AUTHORING_MAX_ESTIMATED_TOKENS` and
+  `AUTHORING_STRUCTURE_MAX_ESTIMATED_TOKENS`); accounting stays conservative and
+  unsettled. The source review reports stage `checking` with "n of N" progress.
+  The structure page shows the run's model usage. Extraction runs 4 workers by
+  default and repairs misfiled passage IDs/dispositions before validation
+  (`normalizeBatchExtraction`). Outline quality constraints, per-stage models and
+  a structure eval harness (P3/P4) are not done yet.
+
 - Generation prompt caching (2026-11-20, spec
   `docs/superpowers/specs/2026-11-20-generation-prompt-caching-design.md`): the
   generator and checker prompts are split into a fixed system prompt (depends on
@@ -400,10 +411,10 @@ commonly need:
 
 - Instructor Questions workspace (2026-11-09, spec
   `docs/superpowers/specs/2026-11-09-instructor-questions-workspace-design.md`):
-  Review Queue, Question Bank and Flags are one Questions page with status tabs,
-  a release bar that says when approved questions are hidden from students, and
-  per-Topic release (now the only place release is managed; Course Structure is
-  read-only). Backed by `GET /api/courses/:courseId/question-workspace`, which
+  Review Queue, Question Bank and Flags are one Questions page with status tabs
+  and a Student visibility section in each question inspector. Release & Publish
+  manages per-Topic release and course publication. Questions is backed by
+  `GET /api/courses/:courseId/question-workspace`, which
   decides student visibility on the server. Old routes redirect. See
   `client/AGENTS.md` and `docs/api-contract.md`.
 - Question pages into the workspace (2026-11-18, spec

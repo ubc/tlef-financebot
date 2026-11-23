@@ -7,9 +7,9 @@ import { completeJson, type ModelCallEvent } from '../components/genai/llm';
 import { defineJob, enqueueJob } from '../components/jobs';
 import { contentRunsCol, materialsCol, materialChunksCol, themesCol, losCol } from '../components/mongodb/collections';
 import type { StructureGenerationRun, StepModelConfig } from '../types/domain';
-import type { StructureOptions, StructureDraft, StructureEvidence, StructureResult, StructureSynthesisReceipt, StructureConditionContext, StructurePageTextObservations } from '../types/structure';
+import type { GapPassReceipt, StructureOptions, StructureDraft, StructureEvidence, StructureResult, StructureSynthesisReceipt, StructureConditionContext, StructurePageTextObservations } from '../types/structure';
 import { readMaterialSourceProvenance, materialWorkspaceProvenance } from './material-source-provenance.service';
-import { utilityStepConfig } from './admin.service';
+import { outlineOrganizerStepConfig, utilityStepConfig } from './admin.service';
 import { assertContentRunActive, claimStructureGenerationRun, createStructureGenerationRun, failContentRun, getContentRun, updateContentRun, type ContentRunUpdate } from './content-runs.service';
 import { partialVisibleJson } from './generation-preview';
 import { assertSourceSelectionReady, getMaterialSourceReadiness, hashSourceChunks } from './source-readiness.service';
@@ -34,6 +34,8 @@ import { createStructureReviewCheckpoint, validateStructureReviewCheckpoint, get
   createStructureReviewContinuation, claimStructureReviewDispatch, finishStructureReviewDispatch, reserveStructureReviewSend,
   recordStructureReviewSend, structureReviewHash, findStructureReviewCheckpoint, assertStructureReviewBudgetCoherence } from './structure-review-checkpoint.service';
 import { reviewStructureProposal, type ReviewProgress } from './structure-outline-review';
+import { GAP_CHECK_BATCH, applyGapCredits, gapCheckPrompts, gapFillPrompt, gapFillThemes, mergeGapObjectives, outlineLoId, uncoveredPoints,
+  validateGapCheck, validateGapFill, type GapCheckRow } from './structure-gap-pass';
 import { createStructureOutlineRepair, createStructureOutlineCoverageRepair, runStructureOutlineRepair,
   getStructureOutlineRepairView as readStructureOutlineRepairView, assertStructureRepairAdoptable as assertStoredStructureRepairAdoptable } from './structure-outline-repair.service';
 import type { StructureCoverageRepairRequest } from '../types/structure-repair';
@@ -234,6 +236,64 @@ export function validateSourceExtraction(raw: unknown, sections: Section[], requ
   });
 }
 
+type RawPoint = { passageId?: unknown; supportingPassageIds?: unknown };
+type RawRow = { sectionId?: unknown; objectives?: unknown; knowledge?: unknown; passageDispositions?: unknown };
+
+/**
+ * Deterministic repair of a batch reply before validation, so a mechanical
+ * slip does not cost a whole correction call. Measured 2026-11-23 (254
+ * sections): 17 of 48 extraction calls were corrections, dominated by "Use a
+ * passage ID belonging to …" (29) — a point filed under a neighbouring section
+ * of the same batch — and conflicting/duplicate dispositions (14).
+ *
+ * Every repair keeps each claim attached to real passage text of the section
+ * that owns it: a point whose primary passage belongs to another requested
+ * section moves to that section; supporting IDs from another section are
+ * dropped; a disposition for a passage an objective already cites, or a repeat,
+ * is dropped. Anything still invalid reaches the normal validator and retry.
+ */
+export function normalizeBatchExtraction(rawRows: unknown[], requested: Section[], policy: SourcePassagePolicy = LEGACY_SOURCE_PASSAGE_POLICY): unknown[] {
+  const owner = new Map<string, string>();
+  for (const section of requested) for (const passage of sourcePassages(section, policy)) owner.set(passage.id, section.id);
+  const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+  const rows = rawRows.map(row => isObject(row) ? { ...row } as RawRow & Record<string, unknown> : row);
+  const byId = new Map<string, RawRow & Record<string, unknown>>();
+  for (const row of rows) if (isObject(row) && typeof row.sectionId === 'string' && !byId.has(row.sectionId)) byId.set(row.sectionId, row as RawRow & Record<string, unknown>);
+  for (const key of ['objectives', 'knowledge'] as const) {
+    for (const row of byId.values()) if (Array.isArray(row[key])) row[key] = [...(row[key] as unknown[])];
+    for (const [sectionId, row] of byId) {
+      const points = Array.isArray(row[key]) ? row[key] as unknown[] : [];
+      const kept: unknown[] = [];
+      for (const point of points) {
+        if (!isObject(point)) { kept.push(point); continue; }
+        const primary = typeof point.passageId === 'string' ? point.passageId : undefined;
+        const home = primary !== undefined ? owner.get(primary) : undefined;
+        const target = home && home !== sectionId && byId.has(home) ? home : sectionId;
+        const supporting = Array.isArray(point.supportingPassageIds)
+          ? (point.supportingPassageIds as unknown[]).filter(id => typeof id !== 'string' || owner.get(id) === undefined || owner.get(id) === target)
+          : point.supportingPassageIds;
+        const repaired = { ...point, ...(supporting !== undefined ? { supportingPassageIds: supporting } : {}) } as RawPoint;
+        if (target === sectionId) kept.push(repaired);
+        else { const destination = byId.get(target)!; destination[key] = [...(Array.isArray(destination[key]) ? destination[key] as unknown[] : []), repaired]; }
+      }
+      row[key] = Array.isArray(row[key]) || kept.length ? kept : row[key];
+    }
+  }
+  for (const row of byId.values()) {
+    if (!Array.isArray(row.passageDispositions)) continue;
+    const linked = new Set((Array.isArray(row.objectives) ? row.objectives as unknown[] : []).flatMap(point => isObject(point)
+      ? [point.passageId, ...(Array.isArray(point.supportingPassageIds) ? point.supportingPassageIds as unknown[] : [])] : []));
+    const seen = new Set<unknown>();
+    row.passageDispositions = (row.passageDispositions as unknown[]).filter(item => {
+      if (!isObject(item)) return true;
+      if (linked.has(item.passageId) || seen.has(item.passageId)) return false;
+      seen.add(item.passageId);
+      return true;
+    });
+  }
+  return rows;
+}
+
 /** A forged quote or cross-source cache reference invalidates the entire unit. */
 export function validateCachedSourceExtraction(raw: unknown, sections: Section[], requirePassageAccounting = false, policy: SourcePassagePolicy = LEGACY_SOURCE_PASSAGE_POLICY): SourceExtractionSection[] {
   const support = z.array(z.object({ passageId: z.string(), quote: z.string() })).max(7).optional();
@@ -420,7 +480,7 @@ export interface StructureGenerationObserver {
   /** Recording alone preserves the native transport. Historical stream probes
    * opt in explicitly rather than changing requests by attaching telemetry. */
   transport?: 'native' | 'stream';
-  record: (event: { callId: string; stage: 'source-extraction' | 'outline-synthesis' | 'outline-organization' | 'outline-source-review' | 'outline-source-repair'; item?: number; attempt: number;
+  record: (event: { callId: string; stage: 'source-extraction' | 'outline-synthesis' | 'outline-organization' | 'outline-source-review' | 'outline-source-repair' | 'outline-gap-check' | 'outline-gap-fill' | 'outline-gap-review'; item?: number; attempt: number;
     model: string; reasoningEffort?: string; maxTokens: number } & (
       { phase: 'prepared'; prompt: string } | { phase: 'input'; prompt: string; jsonAttempt: number } |
       { phase: 'visible-output'; text: string; jsonAttempt: number; providerEvent: ModelCallEvent } |
@@ -430,7 +490,7 @@ export interface StructureGenerationObserver {
 
 function observedStructureCompletion(config: StepModelConfig, runId?: ObjectId, observer?: StructureGenerationObserver) {
   const complete = observer?.complete ?? completeJson;
-  return async (prompt: string, request: Parameters<typeof completeJson>[1], stage: 'source-extraction' | 'outline-synthesis' | 'outline-organization' | 'outline-source-review' | 'outline-source-repair', attempt: number, item?: number) => {
+  return async (prompt: string, request: Parameters<typeof completeJson>[1], stage: 'source-extraction' | 'outline-synthesis' | 'outline-organization' | 'outline-source-review' | 'outline-source-repair' | 'outline-gap-check' | 'outline-gap-fill' | 'outline-gap-review', attempt: number, item?: number) => {
     const receipt = { callId: randomUUID(), stage, attempt, ...(item !== undefined ? { item } : {}), model: config.model,
       ...(config.reasoningEffort ? { reasoningEffort: config.reasoningEffort } : {}), maxTokens: request?.maxTokens ?? 0 };
     if (runId) await assertContentRunActive(runId);
@@ -490,10 +550,48 @@ async function reviewExactStructure(body: StructureReviewCheckpointBody, runId: 
   });
 }
 
+/** Conservative admission units allowed per source section. Measured
+ * 2026-11-23 on 254 sections (8 lectures): ~7.7k units per section through
+ * extraction, synthesis and part of the review; a full review projects ~10.8k.
+ * The flat 2M default stopped that ordinary course's review at 38 of 94
+ * objectives while real usage was ~380k tokens. */
+export const STRUCTURE_UNITS_PER_SECTION = 16_000;
+
+/** The structure run's conservative ceiling, sized to its corpus: never below
+ * the general authoring default, never above the structure ceiling. */
+export function structureEstimatedTokenCeiling(sections: number): number {
+  const floor = Number.isSafeInteger(env.authoringMaxEstimatedTokens) && env.authoringMaxEstimatedTokens > 0 ? env.authoringMaxEstimatedTokens : 2_000_000;
+  const cap = Number.isSafeInteger(env.authoringStructureMaxEstimatedTokens) && env.authoringStructureMaxEstimatedTokens > 0 ? env.authoringStructureMaxEstimatedTokens : 12_000_000;
+  return Math.max(floor, Math.min(cap, STRUCTURE_UNITS_PER_SECTION * Math.max(0, sections)));
+}
+
+/**
+ * Wording rules for every outline call (pack synthesis and final organization).
+ * Measured 2026-11-23 on COMM 298 (8 lectures): LOs averaged 29 words, 31 of
+ * 87 were over 30 and most chained 2-4 capabilities; four named a lecture case
+ * (WeWork, Hydro One) and two were spreadsheet/calculator operations. A
+ * compound LO makes "the question must assess this LO" ambiguous and blurs
+ * per-LO mastery; a case-bound LO pins every question to one example.
+ * Organization with Sol did not fix this — the wording comes from synthesis.
+ */
+export const OUTLINE_LO_WORDING_RULES: readonly string[] = Object.freeze([
+  'LEARNING-OBJECTIVE WORDING. Each LO states ONE assessable capability: one action verb (Calculate, Explain, Distinguish, Compare, Interpret ...) with its object and only the condition that changes the answer. Do not chain capabilities with "and", "including", "while" or semicolons; two capabilities are two LOs.',
+  'Keep each LO concise, but use as many words as the capability and its essential condition need; there is no fixed word limit. The cited evidence carries the detail; do not restate lists of terms, variables or examples in the LO.',
+  'Write the general capability, never the lecture example: no company, case, product or institution names, dollar amounts or dates. Write "Analyze an IPO to identify the seller, proceeds and investor returns", not "Analyze the Hydro One offering".',
+  'Do not write LOs about operating a tool (spreadsheet formulas, cell references, calculator keys). Write the finance capability the tool computes.',
+  'Each distinct capability appears once in the whole outline: merge near-duplicates across topics instead of restating them. When merging, never lengthen one LO to absorb another; keep the shared capability in the shorter wording.',
+  'Distinct core techniques stay distinct LOs even when they share a formula family (for example valuing a perpetuity, a growing perpetuity, an annuity and an annuity due); a source that teaches them must not collapse into one "value cash-flow streams" LO.',
+  'Unless the instructor set counts, give each topic 3 to 7 LOs: fold a topic with fewer than 3 into its nearest neighbour, and split one with more than 7 at a natural boundary.',
+]);
+
 export async function generateStructure(courseId: ObjectId, options: StructureOptions, runId?: ObjectId, observer?: StructureGenerationObserver): Promise<StructureResult> {
+  // Same protocol checks, in the same order, as before the corpus was loaded here.
+  assertStructureCapabilityProtocol(options.capabilityDistinctnessProtocol);
+  if (options.synthesisProtocol !== undefined && options.synthesisProtocol !== SOURCE_CONDITION_CONTEXT_PROTOCOL) throw new Error('structure-synthesis-protocol-unsupported');
+  const corpus = await loadStructureCorpus(courseId, options.materialIds, options.sourceBatchId, options.sourceReplacements, options.pageTextObservationProtocol);
   const budget = new AuthoringBudget(courseId.toHexString(), { maxInputTokens: env.authoringStructureMaxInputTokens },
-    async () => { if (runId) await assertContentRunActive(runId); });
-  try { return await withAuthoringBudget(budget, () => generateStructureWithBudget(courseId, options, budget, runId, observer)); }
+    async () => { if (runId) await assertContentRunActive(runId); }, { maxEstimatedTokensCeiling: structureEstimatedTokenCeiling(corpus.sections.length) });
+  try { return await withAuthoringBudget(budget, () => generateStructureWithBudget(courseId, options, budget, runId, observer, corpus)); }
   catch (error) {
     if (runId) {
       const current = await getContentRun(runId);
@@ -505,18 +603,24 @@ export async function generateStructure(courseId: ObjectId, options: StructureOp
   }
 }
 
-async function generateStructureWithBudget(courseId: ObjectId, options: StructureOptions, budget: AuthoringBudget, runId?: ObjectId, observer?: StructureGenerationObserver): Promise<StructureResult> {
+async function generateStructureWithBudget(courseId: ObjectId, options: StructureOptions, budget: AuthoringBudget, runId?: ObjectId, observer?: StructureGenerationObserver,
+  preloaded?: Corpus): Promise<StructureResult> {
   assertStructureCapabilityProtocol(options.capabilityDistinctnessProtocol);
   if (options.synthesisProtocol !== undefined && options.synthesisProtocol !== SOURCE_CONDITION_CONTEXT_PROTOCOL) throw new Error('structure-synthesis-protocol-unsupported');
-  const corpus = await loadStructureCorpus(courseId, options.materialIds, options.sourceBatchId, options.sourceReplacements, options.pageTextObservationProtocol);
+  const corpus = preloaded ?? await loadStructureCorpus(courseId, options.materialIds, options.sourceBatchId, options.sourceReplacements, options.pageTextObservationProtocol);
   const passagePolicy = resolveSourcePassagePolicy(corpus.passagePolicy);
   const configured = observer?.model ?? await utilityStepConfig(courseId);
   const config = { ...configured, reasoningEffort: configured.reasoningEffort ?? defaultJsonReasoningEffort(configured.model, configured.capabilityProfile) };
+  // The call that writes the final outline has its own step model; a controlled
+  // experiment that pins observer.model keeps one model for every call.
+  const organizerConfigured = observer?.model ?? await outlineOrganizerStepConfig(courseId);
+  const organizerConfig = { ...organizerConfigured, reasoningEffort: organizerConfigured.reasoningEffort ?? defaultJsonReasoningEffort(organizerConfigured.model, organizerConfigured.capabilityProfile) };
   if (observer?.maxOutputTokens !== undefined && (!Number.isSafeInteger(observer.maxOutputTokens) || observer.maxOutputTokens < 512 || observer.maxOutputTokens > 24000)) throw new Error('structure-observer-output-cap-invalid');
   const extractionOutputCap = Math.min(12000, observer?.maxOutputTokens ?? 12000);
   const synthesisOutputCap = Math.min(24000, observer?.maxOutputTokens ?? 24000);
   const checkActive = async () => { if (runId) await assertContentRunActive(runId); };
   const observedComplete = observedStructureCompletion(config, runId, observer);
+  const observedOrganize = observedStructureCompletion(organizerConfig, runId, observer);
   // Parallel paid work shares one CAS-owned run. Serialize only progress writes,
   // never the provider work, so sibling workers cannot invalidate each other.
   let progressWrites = Promise.resolve();
@@ -608,7 +712,7 @@ async function generateStructureWithBudget(courseId: ObjectId, options: Structur
       const actualPrompt = sourceExtractionPrompt(requested, options, passagePolicy) + correction;
       const raw = await observedComplete(actualPrompt, { ...config, maxTokens: extractionOutputCap, beforeRequest: checkActive,
         usageContext: { stage: 'source-extraction', item: Number(batch[0].id.slice(1)) - 1, candidateAttempt: attempt } }, 'source-extraction', attempt, Number(batch[0].id.slice(1)) - 1);
-      const rawRows = raw && typeof raw === 'object' && 'sections' in raw && Array.isArray(raw.sections) ? raw.sections : [];
+      const rawRows = normalizeBatchExtraction(raw && typeof raw === 'object' && 'sections' in raw && Array.isArray(raw.sections) ? raw.sections : [], requested, passagePolicy) as Array<Record<string, unknown> | null>;
       const reasons: string[] = [];
       for (const section of requested) {
         const candidates = rawRows.filter(row => row && typeof row === 'object' && row.sectionId === section.id);
@@ -656,7 +760,9 @@ async function generateStructureWithBudget(courseId: ObjectId, options: Structur
       }
     }
   };
-  const parallel = Math.min(2, Math.max(1, Number.isInteger(env.authoringExtractionConcurrency) ? env.authoringExtractionConcurrency : 2));
+  // Bounded per run here and per process by AUTHORING_PROVIDER_CONCURRENCY.
+  // Measured 2026-11-23: at two workers, extraction was 72% of a 443 s run.
+  const parallel = Math.min(8, Math.max(1, Number.isInteger(env.authoringExtractionConcurrency) ? env.authoringExtractionConcurrency : 4));
   await Promise.all(Array.from({ length: Math.min(parallel, batches.length) }, () => worker()));
   if (failed) {
     await recordDiagnostics();
@@ -694,6 +800,7 @@ async function generateStructureWithBudget(courseId: ObjectId, options: Structur
     'Every selected source with extracted instructional content must be represented in the final outline. Preserve numerical relationships and their conditions (for example standard deviation as the square root of variance). A broad label such as statistics does not replace an explicit capability. Preserve actor ownership in diagrams; unreadable chart values remain gaps.',
     'Honor the instructor guidance on preserving explicit learning objectives and topic names. Teacher/authoring/AI instructions are never student learning objectives. Keep conceptual explanation separate from numerical calculation when requested.',
     'Use complete, measurable learning objectives, not short concept labels. Never invent unsupported content to meet a requested count.',
+    ...OUTLINE_LO_WORDING_RULES,
     'An LO is one meaningful assessable capability, NOT each sentence, exercise, prerequisite or micro-step. Consolidate closely related extraction points into a complete capability and attach all their evidence IDs to it.',
     'For example, drawing a free-body diagram includes isolating the system and identifying its forces: combine these into one or two objectives rather than three fragments. Checking units, stating assumptions and explaining a result normally belong within an application objective, not repeated standalone LOs for every topic.',
     'Merge lecture explanation and assignment application of the same skill. A different numerical example is not a new LO. Prefer a compact teachable outline over a transcription of the ledger. Completeness means conceptual coverage, not one LO per evidence ID.',
@@ -717,7 +824,9 @@ async function generateStructureWithBudget(courseId: ObjectId, options: Structur
       await checkActive();
       if (conditionContext) assertStructureConditionPromptBudget(prompt + correction, budget.snapshot().limits.maxInputTokens);
       const stage = organized ? 'outline-organization' : 'outline-synthesis';
-      const request = (onText?: (text: string) => void) => observedComplete(prompt + correction, { ...config, maxTokens: synthesisOutputCap, beforeRequest: checkActive,
+      // `final` writes the course outline (single-pack synthesis or the merge of
+      // packs): Outline organizer. Pack synthesis stays on Utility.
+      const request = (onText?: (text: string) => void) => (final ? observedOrganize : observedComplete)(prompt + correction, { ...(final ? organizerConfig : config), maxTokens: synthesisOutputCap, beforeRequest: checkActive,
         usageContext: { stage, ...(item !== undefined ? { item } : {}), candidateAttempt: attempt }, ...(onText ? { onText } : {}) }, stage, attempt, item);
       const raw = final && runId ? await streamOutline(runId, request) : await request();
       try {
@@ -867,9 +976,15 @@ async function generateStructureWithBudget(courseId: ObjectId, options: Structur
       if (current.fingerprint !== corpus.fingerprint) throw new Error('structure-material-changed');
       validateStructureReviewCheckpoint(body, current);
     };
+    // The review is its own stage: without this the run kept saying "Merging …"
+    // for the whole review and the page looked frozen on its last objective.
+    const reviewProgress = (reviewed: number) => writeProgress(() => ({ stage: 'checking',
+      message: `Checking objectives against their sources · ${reviewed} of ${expected.length}` }));
+    await reviewProgress(0);
     const findings = await reviewExactStructure(body, runId, observedComplete, assertCurrent, async rows => {
       outlineGrounding = outlineCapabilityGroundingReceipt(rows, expected.length, body.batches);
       await recordDiagnostics();
+      await reviewProgress(Math.min(rows.length, expected.length));
     }, undefined, async (item, attempt, reason) => {
       (synthesisInput!.validationFailures ??= []).push({ stage: 'outline-source-review', item, attempt, reason: reason.slice(0, 600) });
       await recordDiagnostics();
@@ -877,17 +992,93 @@ async function generateStructureWithBudget(courseId: ObjectId, options: Structur
     const admitted = finalizeCapabilityStructureProposal(themes, findings, expected, body.batches);
     themes = admitted.themes; outlineGrounding = admitted.receipt;
   }
+  let gapPass: GapPassReceipt | undefined;
+  if (outlineGrounding && !options.capabilityDistinctnessProtocol) ({ themes, receipt: gapPass } = await runCoverageGapPass(themes));
   await checkActive();
   if (runId) await updateContentRun(runId, { stage: 'checking', message: 'Checking source links and coverage' });
   if ((await loadStructureCorpus(courseId, options.materialIds, options.sourceBatchId, options.sourceReplacements)).fingerprint !== corpus.fingerprint) throw new Error('structure-material-changed');
   await recordDiagnostics();
   return finalizeStructureCoverage({ corpus, evidence, extractions: results.flat().map(row => ({ sectionId: row.source.id, row: row.row, reused: row.reused })),
-    excludedSections, cache, synthesisInput }, themes, budget.snapshot(), outlineGrounding);
+    excludedSections, cache, synthesisInput }, themes, budget.snapshot(), outlineGrounding, gapPass);
+
+  /** Best-effort: a failure keeps the reviewed outline; a stopped run still stops. */
+  async function runCoverageGapPass(base: StructureResult['themes']): Promise<{ themes: StructureResult['themes']; receipt: GapPassReceipt }> {
+    const gaps = uncoveredPoints(base, evidence);
+    const receipt: GapPassReceipt = { version: 'coverage-gap-pass-v1', checkedPoints: gaps.length, labelledPoints: 0, creditedPoints: 0,
+      roles: { core: 0, example: 0, overview: 0, admin: 0 }, coreGapsBeforeFill: 0, newObjectives: { proposed: 0, supported: 0, withheld: 0 },
+      remainingGapIds: [], points: [] };
+    const loNames = new Map(base.flatMap((theme, t) => theme.los.map((lo, l) => [outlineLoId(t, l), lo.name] as const)));
+    const labels = new Map<string, GapCheckRow>();
+    let current = base;
+    try {
+      for (let start = 0, item = 0; start < gaps.length; start += GAP_CHECK_BATCH, item++) {
+        await checkActive();
+        const batch = gaps.slice(start, start + GAP_CHECK_BATCH);
+        await writeProgress(() => ({ stage: 'checking', message: `Checking uncovered learning points · ${start} of ${gaps.length}` }));
+        const { system, task } = gapCheckPrompts(base, batch);
+        const raw = await observedComplete(task, { ...config, systemPrompt: system, promptCacheKey: 'financebot-structure-gap-check-v1', maxTokens: 8000,
+          beforeRequest: checkActive, usageContext: { stage: 'outline-gap-check', item, candidateAttempt: 0 } }, 'outline-gap-check', 0, item);
+        for (const row of validateGapCheck(raw, batch.map(point => point.id), new Set(loNames.keys()))) labels.set(row.id, row);
+      }
+      const rows = [...labels.values()];
+      for (const row of rows) receipt.roles[row.role]++;
+      receipt.labelledPoints = rows.length;
+      const credited = rows.filter(row => row.coveredBy.length);
+      current = applyGapCredits(current, credited, evidence);
+      receipt.creditedPoints = credited.length;
+      const core = gaps.filter(point => labels.get(point.id)?.role === 'core' && !labels.get(point.id)!.coveredBy.length);
+      receipt.coreGapsBeforeFill = core.length;
+      if (core.length) {
+        await checkActive();
+        await writeProgress(() => ({ stage: 'checking', message: `Writing objectives for ${core.length} uncovered learning points` }));
+        const raw = await observedOrganize(gapFillPrompt(current, core, OUTLINE_LO_WORDING_RULES), { ...organizerConfig, maxTokens: 8000, beforeRequest: checkActive,
+          usageContext: { stage: 'outline-gap-fill', candidateAttempt: 0 } }, 'outline-gap-fill', 0);
+        const proposed = validateGapFill(raw, current, core.map(point => point.id));
+        receipt.newObjectives.proposed = proposed.length;
+        if (proposed.length) {
+          const newThemes = gapFillThemes(current, proposed, evidence);
+          const batches = planOutlineGrounding(newThemes, evidence, corpus.sections, Math.min(48000, budget.snapshot().limits.maxInputTokens - 1500));
+          await writeProgress(() => ({ stage: 'checking', message: `Checking ${proposed.length} new objectives against their sources` }));
+          const findings = await reviewStructureProposal({ batches, progress: { findings: [], attempts: {}, unresolvedDispatchIds: [], failures: [] },
+            assertCurrent: checkActive, beforeDispatch: async () => undefined, afterValidation: async () => undefined,
+            complete: (prompt, item, attempt) => observedComplete(prompt, { ...config, maxTokens: 6000, beforeRequest: checkActive,
+              usageContext: { stage: 'outline-gap-review', item, candidateAttempt: attempt } }, 'outline-gap-review', attempt, item) });
+          receipt.newObjectives.withheld = findings.filter(row => row.status !== 'supported').length;
+          try {
+            const admittedNew = finalizeCapabilityStructureProposal(newThemes, findings, batches.flatMap(batch => batch.objectives), batches);
+            receipt.newObjectives.supported = admittedNew.themes.reduce((sum, theme) => sum + theme.los.length, 0);
+            current = mergeGapObjectives(current, admittedNew.themes);
+          } catch (error) {
+            if (!(error instanceof Error) || error.message !== 'structure-grounding-no-supported-objectives') throw error;
+          }
+        }
+      }
+    } catch (error) {
+      await checkActive();
+      receipt.failure = (error instanceof Error ? error.message : 'coverage-gap-pass-failed').slice(0, 300);
+    }
+    receipt.remainingGapIds = uncoveredPoints(current, evidence).map(point => point.id);
+    receipt.points = gaps.map(point => {
+      const row = labels.get(point.id);
+      return { id: point.id, role: row?.role ?? 'unlabelled', coveredBy: (row?.coveredBy ?? []).map(id => loNames.get(id) ?? id), reason: row?.reason ?? '' };
+    });
+    return { themes: current, receipt };
+  }
+}
+
+function gapPassWarning(receipt: GapPassReceipt): string {
+  const remaining = new Set(receipt.remainingGapIds);
+  const left = (role: string) => receipt.points.filter(point => point.role === role && remaining.has(point.id)).length;
+  return `Coverage gap pass: ${receipt.creditedPoints} of ${receipt.checkedPoints} unlinked learning points were credited to existing objectives and `
+    + `${receipt.newObjectives.supported} new source-reviewed objectives were added (${receipt.newObjectives.withheld} withheld). Remaining gaps: `
+    + `${left('core')} core, ${left('example')} examples, ${left('overview')} overview bullets, ${left('admin')} administrative, ${left('unlabelled')} unlabelled. `
+    + 'Credits to existing objectives are model judgments; examples and overview bullets normally need no objective.'
+    + (receipt.failure ? ` The pass stopped early (${receipt.failure}); the reviewed outline was kept.` : '');
 }
 
 /** Normal generation and exact continuation share coverage assembly. */
 export function finalizeStructureCoverage(context: Pick<StructureReviewCheckpointBody, 'corpus' | 'evidence' | 'extractions' | 'excludedSections' | 'cache' | 'synthesisInput'>,
-  themes: StructureResult['themes'], budgetReceipt: AuthoringBudgetReceipt, outlineGrounding?: OutlineGroundingReceipt): StructureResult {
+  themes: StructureResult['themes'], budgetReceipt: AuthoringBudgetReceipt, outlineGrounding?: OutlineGroundingReceipt, gapPass?: GapPassReceipt): StructureResult {
   const { corpus, evidence, extractions, excludedSections, cache, synthesisInput } = context;
   const mapped = new Set(themes.flatMap(t => t.los.flatMap(lo => lo.evidenceIds)));
   const missing = evidence.filter(e => !mapped.has(e.id));
@@ -901,6 +1092,7 @@ export function finalizeStructureCoverage(context: Pick<StructureReviewCheckpoin
     ...(synthesisInput === undefined ? {} : { synthesisInput }), sourceInventory,
     ...(corpus.pageTextObservations ? { pageTextObservations: corpus.pageTextObservations } : {}),
     ...(outlineGrounding ? { outlineGrounding } : {}),
+    ...(gapPass ? { gapPass } : {}),
     materials: corpus.materials.map(m => ({ ...m, mappedObjectives: evidence.filter(e => e.materialId === m.materialId && mapped.has(e.id)).length })),
     analyzedSections: corpus.sections.length, extractedObjectives: evidence.length, mappedObjectives: mapped.size,
     unmappedEvidenceIds: missing.map(e => e.id), excludedSections,
@@ -910,6 +1102,7 @@ export function finalizeStructureCoverage(context: Pick<StructureReviewCheckpoin
       ...(excludedTargets.length ? [`${excludedTargets.length} formula, numerical or visual relationship passages are not linked to an objective. Their explicit dispositions require review; parsed traversal does not establish taught coverage.`] : []),
       ...(sourceInventory.materialsWithoutMappedObjectives.length ? [`${sourceInventory.materialsWithoutMappedObjectives.length} selected sources have no mapped objectives; inspect their non-instructional or visual exclusions.`] : []),
       ...(sourceInventory.potentialRedundantObjectives.length ? [`${sourceInventory.potentialRedundantObjectives.length} objective pairs reuse almost identical evidence; review whether they assess distinct capabilities.`] : []),
+      ...(gapPass ? [gapPassWarning(gapPass)] : []),
       ...(missing.length ? [`${missing.length} extracted learning points are not mapped to an objective. Review these gaps before applying.`] : []),
       ...(exclusionWarning ? [exclusionWarning] : excludedSections.length ? [`${excludedSections.length} sections have no extracted objectives; check their recorded reasons and passage dispositions.`] : []),
       ...(corpus.pageTextObservations ? ['Physical-page text observations are independent of mapped learning points. Blank or sparse extracted text can omit visual content; present text also does not establish visual interpretation. Inspect the pinned original pages before accepting coverage.'] : []),

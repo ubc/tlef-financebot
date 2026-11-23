@@ -338,12 +338,13 @@ test.describe('instructor pipeline', () => {
     test.setTimeout(180_000); // real generation can run well past the 30s default
 
     await page.goto(`/#/instructor/course/${courseId}/preseeding`);
-    await expect(page.getByRole('heading', { name: 'Question Bank Coverage' })).toBeVisible();
-
-    await page.getByRole('button', { name: 'Generate Questions →' }).first().click();
-    await expect(page.getByRole('heading', { name: 'Generate Question with Custom Prompt' })).toBeVisible();
-    await page.getByRole('button', { name: 'Generate Question →' }).click();
-    await expect(page.getByText(/Generation queued/i)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Generate questions', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Clear', exact: true }).click();
+    await page.getByRole('checkbox').first().check();
+    await page.getByRole('button', { name: 'Fewer questions per objective' }).click();
+    await page.getByRole('button', { name: 'Fewer questions per objective' }).click();
+    await page.getByRole('button', { name: 'Generate 1 question →', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Generation activity', exact: true })).toHaveAttribute('aria-pressed', 'true');
 
     // The generated question lands asynchronously as a Draft (202 { jobId },
     // background job) — poll Questions → To review for it rather than assume a

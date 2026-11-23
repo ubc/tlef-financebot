@@ -86,6 +86,15 @@ grant attaches to the same PUID-backed User on first SAML login.
   in context. All setup/action state derives from existing course, material,
   content-run, hierarchy, question/review, flag, analytics, and isolated-preview
   records and stores no parallel wizard state.
+- `GET /api/courses/:courseId/dashboard-metrics` → `{ students, generation }`
+  for the Instructor Dashboard. Student activity counts enrolled students who
+  submitted a practice answer in the past seven days. Generation reports
+  recorded course-wide LLM tokens and an estimated USD subtotal by provider
+  and model, observed generation and Compare tokens, and the average across
+  fully tracked terminal tasks per saved draft (falling back to fully tracked
+  Compare alternatives). The forecast reprices that token sample with the
+  current generation and checking model rates. Unpriced calls and incomplete
+  recording are reported explicitly. Unavailable sections or values are `null`.
 - `POST /api/courses/:courseId/outline`
   `{ themes: [{ name, los: string[] }] }` → `201 { themesCreated, losCreated,
   themes: [{ _id, name, created, los: [{ _id, name, created }] }] }`. This
@@ -345,6 +354,11 @@ material ids are rejected before hierarchy creation begins.
 ## Question bank (instructor; TA read paths in Phase 3)
 - `GET /api/courses/:courseId/questions?state=&loId=&themeId=&type=&difficulty=&label=` →
   `{ total, questions: [{ id, state, labels, loIds, themeIds, current: QuestionVersion, contentReady }] }` (IN-Q08)
+- `GET /api/questions/:questionId/generation-usage` (Instructor/Admin) →
+  `{ original, alternatives, alternativesPartial }`. Original usage joins
+  generation receipts by run and item and labels a run-wide fallback. Alternative
+  usage is scoped to Compare requests for the question, including discarded
+  previews. Dollar values are estimates from the recorded provider/model rates.
 - `GET /api/questions/:questionId` → full question + current version +
   agentDecision + notes + versions list + optional regeneration request
   history, `templateFamilyId`, and per-version `provenance`
@@ -441,6 +455,11 @@ material ids are rejected before hierarchy creation begins.
   a QuestionVersion or replace current content. Replacement is an explicit
   `PATCH /api/questions/:questionId` after instructor review (IN-Q12). There
   are no regeneration-candidate records and no adopt route.
+  `Accept: text/event-stream` on the same POST streams `progress` events
+  with `{ stage: 'retrieving' | 'generating' | 'reviewing' }` and `preview`
+  events containing bounded draft question fields. A terminal `result` carries
+  the same `{ variant }` as JSON. Failures before streaming retain HTTP statuses.
+  Once streaming starts, a terminal `error` carries `{ status, error }`.
 - `POST /api/courses/:courseId/question-similarity/rebuild` → `{ questions }`.
   Instructor-only. Recomputes embeddings and `similarity` for every active
   question in the course.
@@ -909,7 +928,9 @@ operation writes an audit entry.
   platform defaults or a separate per-course matrix, including effective-value
   source labels. TA approval and flag resolution remain hard-locked off.
 - `GET|PUT /api/admin/platform-settings` — generator, reviewer (Checker),
-  utility and future mastery-evaluator model selectors; positive daily
+  utility, outlineOrganizer (the Course Structure call that writes the final
+  topics and LOs; `LLM_MODEL_OUTLINE_ORGANIZER`) and future mastery-evaluator
+  model selectors; PUT requires all five. Positive daily
   generation limit; feature flags `layer2Evaluator` and `generationRepair`
   (default true; a PUT that omits it keeps it on). The checker always runs.
   Exceeding the daily requested-question limit returns 429.
@@ -923,15 +944,23 @@ operation writes an audit entry.
   `environmentModels` by stage and automatically lists environment model IDs;
   no Custom model registration or provider call is needed. Provider availability
   still requires a real generation test. Existing queued model IDs remain pinned.
+- `GET|PUT /api/courses/:courseId/models` — course instructors edit the same
+  shared per-course model choice from Course Settings → AI models. Same body and
+  response as the Admin endpoint below, except the response lists
+  `selectableModels` (`{ id, profile }`: built-in supported models plus
+  environment defaults, never Admin custom models) instead of `availableModels`.
+  A new choice outside that list is 400 `invalid-model-selector`; an unchanged
+  existing choice (for example an Admin-assigned custom model) is kept. Saves are
+  audited as `course-models.update` with `detail.scope: 'instructor'`.
 - `GET|PUT /api/admin/courses/:courseId/models` — Admin-only, per-course model
-  choices for Generator, Reviewer (Checker), and Utility. GET returns
+  choices for Generator, Reviewer (Checker), Utility, Outline organizer and
+  Mastery evaluator (saved, not yet used). GET returns
   `revision`, sparse `overrides`, `platformModels`, `effectiveModels`, and
   `availableModels`. PUT takes `{ revision, overrides }` and replaces the sparse
   choices. Omitted stages inherit the platform setting, then the environment
   where configured. Course choices keep compatible platform parameters.
   Writes are audited and a stale revision returns 409. Reviewer and generation
-  limits are platform-wide. The reserved Mastery evaluator accepts no course
-  override. New bank and Exam Builder jobs pin the model IDs and parameters;
+  limits are platform-wide. New bank and Exam Builder jobs pin the model IDs and parameters;
   retries use the stored snapshot when available. Saved recipes retain their
   model choices. Utility resolves the course model when work begins.
 
@@ -971,6 +1000,16 @@ reads return 403. It reuses the existing layered resolver and TA hard denies.
 It does not accept a target PUID or a role override. Instructor TA View sees the
 real Instructor's booleans, while the TA views still omit approval/resolution.
 
+
+### Generation batch size (2026-11-23)
+
+`POST /api/courses/:courseId/generation-plan` accepts at most 200 cells and at
+most 200 questions in total (sum of cell `count`, each 1–20); a larger batch is
+400 (validation) or `generation-plan-too-large` before anything is enqueued.
+The composer defaults to 2 questions per objective; its "Mixed" question type
+alternates multiple choice and true/false across each objective's questions, and
+true/false cells are always `kind: 'conceptual'`. Balanced difficulty rotates
+easy/medium/hard across objectives.
 
 ### Guided generation submission identity (2026-09-14)
 
@@ -1852,6 +1891,12 @@ IDs. A foreign or missing run returns the same 404.
 
 Admin-only endpoints:
 
+- `GET /api/admin/ai-usage` accepts optional ISO `from` and `until` and returns
+  `{ summary, courses, average, truncated }`. Courses include an unattributed
+  row when applicable. USD estimates use the recorded model and available rate.
+  Averages use complete terminal generation runs within the scope and divide
+  by saved drafts. Unpriced costs are nullable, and capped reads return a
+  subtotal with `truncated: true`.
 - `GET /api/admin/model-usage`: filters `actor` (PUID), `courseId`, `runId`,
   `operationId`, ISO `from`/`until`, `page`, and `limit` (maximum 100). Returns
   paginated call receipts, a summary independent of the displayed page, and

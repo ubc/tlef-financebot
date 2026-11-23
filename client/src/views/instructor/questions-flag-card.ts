@@ -23,6 +23,7 @@ import {
 import { el, mount } from '../../dom.js';
 import { statusBadge, type BadgeVariant } from '../../instructor-ui.js';
 import { textPromptDialog } from '../../modal.js';
+import { taEscalationForm } from '../ta/flag-triage.js';
 import { errorState } from '../../ui.js';
 import {
   byCreatedAtDesc,
@@ -104,6 +105,7 @@ export function flagsHelp(): HTMLElement {
 
 export interface FlagCardOptions {
   courseId: string;
+  ta?: boolean;
   questionId: string;
   /** Called after a resolution here changed flag or question state. */
   onChanged: () => void;
@@ -279,11 +281,14 @@ export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; l
           escalation.note ? el('span', { text: ` — “${escalation.note}”` }) : false)
         : escalated ? el('p', { class: 'questions-flag-card__escalation' }, el('strong', { text: 'Escalated by a TA — no recommendation recorded' })) : false,
       reportList(open),
-      el('div', { class: 'questions-flag-card__actions' },
+      options.ta ? taEscalationForm(group, async () => {
+        await load();
+        options.onChanged();
+      }) : el('div', { class: 'questions-flag-card__actions' },
         el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', disabled: busy, onclick: () => options.onCorrect({ versionId: group.questionVersionId, flags: open }) }, 'Correct the question'),
         el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: busy, onclick: () => handleArchive(group) }, 'Archive the question'),
         el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: busy, onclick: () => handleClear(group) }, busy ? 'Clearing…' : 'Clear the flag')),
-      remediationPanel(group));
+      !options.ta && remediationPanel(group));
   }
 
   function resolvedGroup(group: FlagGroup): HTMLElement {
@@ -291,7 +296,7 @@ export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; l
     return el('div', { class: 'questions-flag-card__resolved-group' },
       statusBadge(action ? RESOLUTION_LABEL[action] : 'Resolved', action ? RESOLUTION_VARIANT[action] : 'neutral'),
       reportList(group.flags),
-      remediationPanel(group));
+      !options.ta && remediationPanel(group));
   }
 
   function draw(): void {
@@ -305,11 +310,11 @@ export function createFlagCard(options: FlagCardOptions): { root: HTMLElement; l
       actionError ? errorState(actionError) : false,
       ...open.map((group) => openGroup(group, currentVersionId)),
       resolved.length
-        ? el('details', { class: 'questions-flag-card__history', open: open.length === 0 && resolved.some((group) => groupHasCorrectnessAffectingResolution(group)) },
+        ? el('details', { class: 'questions-flag-card__history', open: !options.ta && open.length === 0 && resolved.some((group) => groupHasCorrectnessAffectingResolution(group)) },
           el('summary', { text: `Resolved · ${resolved.reduce((sum, group) => sum + group.flags.length, 0)}` }),
           ...resolved.map(resolvedGroup))
         : false,
-      open.length ? flagsHelp() : false);
+      open.length && !options.ta ? flagsHelp() : false);
   }
 
   async function load(): Promise<void> {

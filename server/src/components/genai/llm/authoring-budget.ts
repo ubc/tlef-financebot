@@ -20,12 +20,13 @@ export class AuthoringBudgetError extends Error {
 }
 
 const positive = (value: number | undefined, fallback: number) => Number.isSafeInteger(value) && value! > 0 ? value! : fallback;
-export function defaultAuthoringLimits(overrides: Partial<AuthoringBudgetLimits> = {}): AuthoringBudgetLimits {
+export function defaultAuthoringLimits(overrides: Partial<AuthoringBudgetLimits> = {}, estimatedCeiling?: number): AuthoringBudgetLimits {
+  const ceiling = positive(estimatedCeiling, positive(env.authoringMaxEstimatedTokens, 2_000_000));
   return {
     maxSends: Math.min(overrides.maxSends ?? positive(env.authoringMaxSends, 256), positive(env.authoringMaxSends, 256)),
     maxInputTokens: overrides.maxInputTokens ?? positive(env.authoringMaxInputTokens, 24000),
     maxOutputTokens: overrides.maxOutputTokens ?? positive(env.authoringMaxOutputTokens, 24000),
-    maxEstimatedTokens: Math.min(overrides.maxEstimatedTokens ?? positive(env.authoringMaxEstimatedTokens, 2_000_000), positive(env.authoringMaxEstimatedTokens, 2_000_000)),
+    maxEstimatedTokens: Math.min(overrides.maxEstimatedTokens ?? ceiling, ceiling),
   };
 }
 /** UTF-8 bytes deliberately overestimate normal text. This is an admission
@@ -44,7 +45,7 @@ export class AuthoringBudget {
     this.receipt = { version: 1, estimator: 'utf8-bytes-conservative-v1', retryVisibility: 'unknown', limitScope: 'process',
       observedSends: 0, estimatedInputTokens: 0, reservedOutputTokens: 0, reportedInputTokens: null, reportedOutputTokens: null, usageCompleteness: 'unknown',
       accounting: options.accounting ?? 'conservative-reservations-v1', admissionTokens: 0, pendingSends: 0, settledSends: 0, conservativeFinishedSends: 0,
-      queueWaitMs: 0, executionMs: 0, rejectedSends: 0, limits: defaultAuthoringLimits(limits),
+      queueWaitMs: 0, executionMs: 0, rejectedSends: 0, limits: defaultAuthoringLimits(limits, options.maxEstimatedTokensCeiling),
       logical: { generatorAttempts: 0, repairCycles: 0, evidenceExpansions: 0, limits: { generatorAttempts: 2, repairCycles: 1, evidenceExpansions: 1 } } };
   }
   snapshot(): AuthoringBudgetReceipt { return structuredClone(this.receipt); }

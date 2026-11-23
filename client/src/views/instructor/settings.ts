@@ -1,3 +1,4 @@
+import { courseModelsSettingsPanel } from './course-models-settings.js';
 import { teachingSettingsPanel } from './teaching-settings.js';
 import { attachTutorial } from '../../tutorials.js';
 // Course Settings (I4) — term dates, feedback strategy, auto-pause,
@@ -254,6 +255,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
         canPermanentlyDelete ? el('button', { class: 'btn btn--danger', type: 'button', onclick: () => permanentlyDelete(), text: 'Delete course permanently' }) : el('p', { text: 'Only the course owner or an administrator can permanently delete this course.' }))),
   };
   sections['Teaching mode'] = teachingSettingsPanel(courseId);
+  sections['AI models'] = courseModelsSettingsPanel(courseId);
   const nav = el('nav', { class: 'admin-local-nav', 'aria-label': 'Settings sections' });
   const content = el('div', { class: 'admin-pane' });
   const save = el('button', { class: 'btn btn--instr-primary', type: 'button', text: 'Save changes', onclick: () => saveSettings() });
@@ -262,7 +264,7 @@ async function renderSettingsInner(outlet: HTMLElement, courseId: string): Promi
     activeSection = name;
     nav.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.textContent === name)));
     content.replaceChildren(el('div', { class: 'admin-subhead' }, el('h2', { text: name }), el('small', { text: `${course.courseCode}${course.section ? ` · Section ${course.section}` : ''}` })), sections[name]);
-    footer.hidden = name === 'Course lifecycle' || name === 'Teaching mode' || name === 'Canvas';
+    footer.hidden = name === 'Course lifecycle' || name === 'Teaching mode' || name === 'Canvas' || name === 'AI models';
     settingsStatusSlot.replaceChildren(); settingsErrorSlot.replaceChildren();
   }
   Object.keys(sections).forEach((name, index) => nav.append(el('button', { id: `settings-section-${index}`, class: 'btn btn--ghost', type: 'button', text: name, onclick: () => selectSection(name) })));

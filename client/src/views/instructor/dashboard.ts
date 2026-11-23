@@ -16,6 +16,7 @@ import { errorState, loadingState } from '../../ui.js';
 import type { RouteParams } from '../../router.js';
 import { startAnonymousPreview } from '../../preview-session.js';
 import { suggestedTermDates } from '../../academic-terms.js';
+import { courseDashboardMetrics } from './dashboard-metrics.js';
 
 function navigate(path: string): void {
   window.location.hash = path;
@@ -508,6 +509,7 @@ async function renderDashboardInner(outlet: HTMLElement, courseId: string): Prom
           statTiles(data),
         ),
       ),
+      courseDashboardMetrics(courseId),
       el(
         'section',
         { class: 'project-explore', 'aria-labelledby': 'explore-course-title' },

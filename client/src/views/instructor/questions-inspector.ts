@@ -13,6 +13,7 @@ export const INSPECTOR_TABS: ReadonlyArray<{ id: InspectorTab; label: string }> 
 
 export interface InspectorOptions {
   active: InspectorTab;
+  readOnly?: boolean;
   /** Pending TA suggestions, shown on the Team tab. */
   teamCount: number;
   panel: HTMLElement;
@@ -20,19 +21,20 @@ export interface InspectorOptions {
 }
 
 export function inspector(options: InspectorOptions): HTMLElement {
+  const visibleTabs = options.readOnly ? INSPECTOR_TABS.filter(tab => tab.id !== 'settings') : INSPECTOR_TABS;
   const tabId = (id: InspectorTab): string => `questions-inspector-tab-${id}`;
   const move = (event: KeyboardEvent): void => {
-    const index = INSPECTOR_TABS.findIndex((tab) => tab.id === options.active);
-    const last = INSPECTOR_TABS.length - 1;
-    const next = event.key === 'ArrowRight' ? (index + 1) % INSPECTOR_TABS.length
-      : event.key === 'ArrowLeft' ? (index + last) % INSPECTOR_TABS.length
+    const index = visibleTabs.findIndex((tab) => tab.id === options.active);
+    const last = visibleTabs.length - 1;
+    const next = event.key === 'ArrowRight' ? (index + 1) % visibleTabs.length
+      : event.key === 'ArrowLeft' ? (index + last) % visibleTabs.length
         : event.key === 'Home' ? 0 : event.key === 'End' ? last : -1;
     if (next < 0) return;
     event.preventDefault();
-    options.onSelect(INSPECTOR_TABS[next].id, true);
+    options.onSelect(visibleTabs[next].id, true);
   };
   const tabs = el('div', { class: 'questions-inspector__tabs', role: 'tablist', 'aria-label': 'Question inspector', onkeydown: move },
-    ...INSPECTOR_TABS.map((tab) => {
+    ...visibleTabs.map((tab) => {
       const selected = tab.id === options.active;
       return el('button', {
         class: `questions-inspector__tab${selected ? ' is-active' : ''}`,

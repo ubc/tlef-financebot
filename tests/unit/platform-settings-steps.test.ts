@@ -47,6 +47,7 @@ function validPatch(over: Partial<PlatformSettings['models']> = {}) {
       reviewer: { model: NANO },
       masteryEvaluator: { model: NANO },
       utility: { model: NANO },
+      outlineOrganizer: { model: NANO },
       ...over,
     },
     costControls: { maxGenerationsPerDay: 10 },

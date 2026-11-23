@@ -6,6 +6,7 @@ import { createRoleSwitcher, selectedWorkspaceRole, rememberWorkspaceRole } from
 import { renderWorkspaceCourses } from './views/workspace-courses.js';
 import { installClientDiagnostics } from './diagnostics.js';
 import { renderAdminOperations, renderAdminOperationDetail } from './views/admin/operations.js';
+import { renderAdminAiUsage } from './views/admin/ai-usage.js';
 import { renderAdminQuestions, renderAdminQuestionDetail } from './views/admin/questions.js';
 import { renderTutorialHelp, renderWorkspacePreviewHelp } from './views/tutorial-help.js';
 // App bootstrap. Decides between the pre-login landing screen and the full app
@@ -28,7 +29,7 @@ import {
   setUnauthorizedHandler,
   type InstructorCourse,
 } from './api.js';
-import { startRouter, type Route, type RouterHandle } from './router.js';
+import { currentQuery, startRouter, type Route, type RouterHandle } from './router.js';
 import { renderLanding } from './views/landing.js';
 import { renderHome } from './views/home.js';
 import { renderNotes } from './views/notes.js';
@@ -72,12 +73,9 @@ import { renderExamTemplates } from './views/instructor/exam-templates.js';
 import { renderLegacyQuestionsRedirect, renderQuestions } from './views/instructor/questions.js';
 import { renderPeople } from './views/instructor/people.js';
 import { openCourseSharing } from './course-sharing.js';
-import { renderPreseeding } from './views/instructor/preseeding.js';
-import { renderTaReviewQueue } from './views/ta/review-queue.js';
-import { renderTaFlagTriage } from './views/ta/flag-triage.js';
-import { renderTaQuestionDetail } from './views/ta/question-detail.js';
+import { renderGenerationWorkbench } from './views/instructor/generation-workbench.js';
 import { renderTaAnalytics, renderTaStudentProfile } from './views/ta/analytics.js';
-import { renderTaCourseHome, renderTaMaterials, renderTaStructure, renderTaCoverage, renderTaBank } from './views/ta/course-content.js';
+import { renderTaCourseHome } from './views/ta/course-content.js';
 import { renderAnalytics } from './views/instructor/analytics.js';
 import { renderStudentProfile } from './views/instructor/student-profile.js';
 import {
@@ -142,6 +140,7 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/canvas', render: renderCanvas },
   { path: '/instructor/help', render: renderTutorialHelp },
   { path: '/admin/operations', render: renderAdminOperations },
+  { path: '/admin/ai-usage', render: renderAdminAiUsage },
   { path: '/admin/operations/:kind/:id', render: renderAdminOperationDetail },
   { path: '/admin/questions', render: renderAdminQuestions },
   { path: '/admin/questions/:id', render: renderAdminQuestionDetail },
@@ -171,25 +170,39 @@ const INSTRUCTOR_ROUTES: Route[] = [
   { path: '/instructor/course/:id/queue', render: renderLegacyQuestionsRedirect },
   { path: '/instructor/course/:id/flags', render: renderLegacyQuestionsRedirect },
   { path: '/instructor/course/:id/import', render: renderImport },
-  { path: '/instructor/course/:id/preseeding', render: renderPreseeding },
+  { path: '/instructor/course/:id/preseeding', render: (outlet, { id }) => renderGenerationWorkbench(outlet, id) },
   { path: '/instructor/course/:id/tas', render: renderPeople },
   { path: '/instructor/course/:id/student/:puid', render: renderStudentProfile },
   { path: '/instructor/course/:id/analytics', render: renderAnalytics },
   { path: '/instructor/course/:id', render: renderDashboard },
 ];
 
+function redirectTaQuestions(tab?: 'review' | 'approved' | 'flags'): Route['render'] {
+  return (_outlet, { id, questionId }) => {
+    const query = currentQuery();
+    if (tab) query.set('tab', tab);
+    const selection = questionId ?? query.get('question');
+    if (selection) query.set('q', selection);
+    query.delete('question');
+    const search = query.toString();
+    window.location.replace(`#/ta/course/${encodeURIComponent(id)}/questions${search ? `?${search}` : ''}`);
+  };
+}
+
 const TA_ROUTES: Route[] = [
   { path: '/ta/course/:id/overview', render: renderTaCourseHome },
-  { path: '/ta/course/:id/materials', render: renderTaMaterials },
-  { path: '/ta/course/:id/structure', render: renderTaStructure },
-  { path: '/ta/course/:id/coverage', render: renderTaCoverage },
-  { path: '/ta/course/:id/bank', render: renderTaBank },
+  { path: '/ta/course/:id/materials', render: (outlet, params) => renderMaterials(outlet, params, true) },
+  { path: '/ta/course/:id/structure', render: (outlet, params) => renderStructure(outlet, params, true) },
+  { path: '/ta/course/:id/content-map', render: (outlet, params) => renderContentMap(outlet, params, 'ta') },
+  { path: '/ta/course/:id/questions', render: (outlet, params) => renderQuestions(outlet, params, 'ta') },
   { path: '/ta/course/:id/help', render: renderTutorialHelp },
   { path: '/ta/course/:id/student/:puid', render: renderTaStudentProfile },
   { path: '/ta/course/:id/analytics', render: renderTaAnalytics },
-  { path: '/ta/course/:id/question/:questionId', render: renderTaQuestionDetail },
-  { path: '/ta/course/:id/review', render: renderTaReviewQueue },
-  { path: '/ta/course/:id/flags', render: renderTaFlagTriage },
+  { path: '/ta/course/:id/coverage', render: (_outlet, { id }) => { window.location.replace(`#/ta/course/${encodeURIComponent(id)}/content-map`); } },
+  { path: '/ta/course/:id/bank', render: redirectTaQuestions('approved') },
+  { path: '/ta/course/:id/question/:questionId', render: redirectTaQuestions() },
+  { path: '/ta/course/:id/review', render: redirectTaQuestions('review') },
+  { path: '/ta/course/:id/flags', render: redirectTaQuestions('flags') },
 ];
 
 /** Instructor chrome shows for an explicit global/course Instructor grant or
@@ -272,40 +285,29 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
     el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: 'C' }),
     el('span', { class: 'nav__text', text: 'My Courses' }),
   );
-  const reviewLink = el('a', { class: 'nav__link', title: 'Review Queue' },
-    el('span', { class: 'nav__glyph nav__glyph--step', 'aria-hidden': 'true', text: '1' }),
-    el('span', { class: 'nav__text', text: 'Review Queue' }),
-  ) as HTMLAnchorElement;
-  const flagsLink = el('a', { class: 'nav__link', title: 'Flag Triage' },
-    el('span', { class: 'nav__glyph nav__glyph--step', 'aria-hidden': 'true', text: '2' }),
-    el('span', { class: 'nav__text', text: 'Flag Triage' }),
-  ) as HTMLAnchorElement;
+  const contentLinks = ([
+    ['overview', 'Course Dashboard', '⌂'],
+    ['materials', 'Course Materials', '1'],
+    ['structure', 'Course Structure', '2'],
+    ['questions', 'Questions', '4'],
+  ] as const).map(([section, label, glyph]) => ({
+    section,
+    link: el('a', { class: 'nav__link', title: label, hidden: section === 'questions' },
+      el('span', { class: `nav__glyph${/^\d$/.test(glyph) ? ' nav__glyph--step' : ''}`, 'aria-hidden': 'true', text: glyph }),
+      el('span', { class: 'nav__text', text: label }),
+    ),
+  }));
+  const questionsLink = contentLinks.find(item => item.section === 'questions')!.link;
   const analyticsLink = el('a', { class: 'nav__link', title: 'Student Analytics', hidden: true },
     el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: '↗' }),
     el('span', { class: 'nav__text', text: 'Student Analytics' }),
-  ) as HTMLAnchorElement;
-  const contentLinks = ([
-    ['overview', 'Course Home', '⌂'],
-    ['materials', 'Materials', 'M'],
-    ['structure', 'Course Structure', 'S'],
-    ['coverage', 'Coverage Map', '◫'],
-    ['bank', 'Question Bank', 'Q'],
-  ] as const).map(([section, label, glyph]) => ({
-    section,
-    link: el('a', { class: 'nav__link', title: label },
-      el('span', { class: 'nav__glyph', 'aria-hidden': 'true', text: glyph }),
-      el('span', { class: 'nav__text', text: label }),
-    ) as HTMLAnchorElement,
-  }));
-  const bankLink = contentLinks.find(item => item.section === 'bank')!.link;
-  const workflowSection = el('div', { class: 'nav__section' },
-    el('p', { class: 'nav__group', text: 'Course workflow' }),
-    reviewLink,
-    flagsLink,
+  );
+  const workflowSection = el('div', { class: 'nav__section', hidden: true },
+    el('p', { class: 'nav__group', text: 'Assess & improve' }),
     analyticsLink,
   );
   const contentSection = el('div', { class: 'nav__section' },
-    el('p', { class: 'nav__group', text: 'Course content' }),
+    el('p', { class: 'nav__group', text: 'Course workspace' }),
     ...contentLinks.map(item => item.link),
   );
   nav.append(el('div', { class: 'nav__section' }, coursesLink), contentSection, workflowSection);
@@ -383,13 +385,13 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
         : route),
     ],
     outlet,
-    fallback: initialCourseId ? `/ta/course/${encodeURIComponent(initialCourseId)}/review` : '/ta/courses',
+    fallback: initialCourseId ? `/ta/course/${encodeURIComponent(initialCourseId)}/overview` : '/ta/courses',
     onNavigate: (path) => {
       const courseId = taCourseIdFromPath(path);
       courseContext.hidden = !courseId;
       coursesLink.hidden = !!courseId;
       helpLink.hidden = !!courseId;
-      workflowSection.hidden = !courseId;
+      workflowSection.hidden = true;
       contentSection.hidden = !courseId;
       helpLink.href = courseId ? `#/ta/course/${encodeURIComponent(courseId)}/help` : '#/ta/help';
       helpLink.classList.toggle('nav__link--active', path === '/ta/help' || path.endsWith('/help'));
@@ -403,46 +405,37 @@ function buildTaShell(root: HTMLElement, session: Session, viewAs = false): Rout
         ++contextVersion;
         ++permissionVersion;
         analyticsLink.hidden = true;
-        bankLink.hidden = true;
+        questionsLink.hidden = true;
         topbarTitle.textContent = 'My courses';
         document.title = `My Courses · ${APP.name}`;
         return;
       }
       updateCourseContext(courseId);
-      reviewLink.href = `#/ta/course/${encodeURIComponent(courseId)}/review`;
       for (const item of contentLinks) {
         item.link.href = `#/ta/course/${encodeURIComponent(courseId)}/${item.section}`;
-        const active = path.endsWith(`/${item.section}`);
+        const active = path.endsWith(`/${item.section}`) ||
+          (item.section === 'structure' && path.endsWith('/content-map'));
         item.link.classList.toggle('nav__link--active', active);
         if (active) item.link.setAttribute('aria-current', 'page');
         else item.link.removeAttribute('aria-current');
       }
-      flagsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/flags`;
       analyticsLink.href = `#/ta/course/${encodeURIComponent(courseId)}/analytics`;
       analyticsLink.hidden = true;
-      bankLink.hidden = true;
+      questionsLink.hidden = true;
       const currentPermissionVersion = ++permissionVersion;
       void getMyCourseCapabilities(courseId).then(permissions => {
         if (currentPermissionVersion === permissionVersion) {
           analyticsLink.hidden = !permissions['analytics.view'];
-          bankLink.hidden = !permissions['question.review'];
+          workflowSection.hidden = analyticsLink.hidden;
+          questionsLink.hidden = !permissions['question.review'] && !permissions['flag.triage'];
         }
       }).catch(() => {
         if (currentPermissionVersion === permissionVersion) {
           analyticsLink.hidden = true;
-          bankLink.hidden = true;
+          questionsLink.hidden = true;
         }
       });
-      reviewLink.classList.toggle(
-        'nav__link--active',
-        path.endsWith('/review') || path.includes('/question/'),
-      );
-      flagsLink.classList.toggle('nav__link--active', path.endsWith('/flags'));
       analyticsLink.classList.toggle('nav__link--active', path.endsWith('/analytics') || path.includes('/student/'));
-      if (reviewLink.classList.contains('nav__link--active')) reviewLink.setAttribute('aria-current', 'page');
-      else reviewLink.removeAttribute('aria-current');
-      if (flagsLink.classList.contains('nav__link--active')) flagsLink.setAttribute('aria-current', 'page');
-      else flagsLink.removeAttribute('aria-current');
       if (analyticsLink.classList.contains('nav__link--active')) analyticsLink.setAttribute('aria-current', 'page');
       else analyticsLink.removeAttribute('aria-current');
       shell.classList.remove('is-open');
@@ -484,6 +477,7 @@ function buildInstructorShell(root: HTMLElement, session: Session, isAdmin = ses
           label: 'Admin',
           items: [
             { label: 'Operations & Issues', path: '/admin/operations', glyph: 'O' },
+            { label: 'AI Usage & Cost', path: '/admin/ai-usage', glyph: 'A' },
             { label: 'All Questions', path: '/admin/questions', glyph: 'Q' },
             { label: 'User Directory', path: '/admin/users', glyph: 'U' },
             { label: 'Capabilities', path: '/admin/capabilities', glyph: 'C' },

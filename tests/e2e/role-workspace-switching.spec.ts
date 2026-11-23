@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { TUTORIAL_DEFINITIONS } from '../../client/src/tutorial-definitions';
-import type { AuthUser } from '../../client/src/api';
+import type { AuthUser, QuestionDetail, QuestionSuggestion } from '../../client/src/api';
 
 const COURSE = '507f1f77bcf86cd799439011';
 const OTHER_COURSE = '507f1f77bcf86cd799439012';
@@ -15,7 +15,23 @@ const COURSES = [
 ];
 const DRAFT_COURSE = { _id: '507f1f77bcf86cd799439013', name: 'Sandbox Finance', owner:OWNERS[1], courseCode: 'FIN 301', section: '003', term: '2026W1', lifecycle: 'draft', published: false };
 
-async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dark'; path?: string; forgedRole?: Role; analyticsView?: boolean; analyticsIndividual?: boolean; includeDraft?: boolean } = {}) {
+const REVIEW_QUESTION = {
+  id: 'question-1', courseId: COURSE, currentVersionId: 'version-1', currentVersion: 1, state: 'draft',
+  themeIds: ['topic-1'], loIds: ['lo-1'], labels: [], openFlagCount: 0, studentVisible: false,
+  hiddenReason: 'not-approved', suggestions: [] as QuestionSuggestion[], internalNotes: [] as QuestionDetail['internalNotes'], versions: [],
+  current: { _id: 'version-1', type: 'mcq', difficulty: 'easy', stem: 'What is present value?', options: [], sourceRefs: [] },
+};
+
+function questionWorkspace(tab: string, question = REVIEW_QUESTION) {
+  return {
+    tab,
+    counts: { review: 1, approved: 0, approvedVisible: 0, approvedWaiting: 0, flags: question.openFlagCount ? 1 : 0, paused: 0, archived: 0 },
+    release: { coursePublished: true, themes: [], hiddenApprovedCount: 0 },
+    items: tab === 'review' || (tab === 'flags' && question.openFlagCount) ? [question] : [],
+  };
+}
+
+async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dark'; path?: string; forgedRole?: Role; analyticsView?: boolean; analyticsIndividual?: boolean; questionReview?: boolean; flagTriage?: boolean; includeDraft?: boolean } = {}) {
   const availableCourses = options.includeDraft ? [...COURSES, DRAFT_COURSE] : COURSES;
   const user: AuthUser = {
     puid: `ROLE-FIXTURE-${role}`, uid: role, displayName: `${LABELS[role]} User`,
@@ -36,6 +52,9 @@ async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dar
     const url = new URL(route.request().url());
     const path = url.pathname;
     requests.push(url);
+    if (path === '/api/diagnostics/client-error' && route.request().method() === 'POST') {
+      return route.fulfill({ status: 204 });
+    }
     if (route.request().method() !== 'GET') {
       writes.push(`${route.request().method()} ${path}`);
       return route.fulfill({ status: 405, json: { error: 'This fixture permits no mutations.' } });
@@ -57,9 +76,10 @@ async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dar
       los: [{ _id: 'lo-1', name: 'Discounting cash flows', order: 0 }] }] } });
     if (course && path.endsWith('/content-map')) return route.fulfill({ json: { themes: [{ themeId: 'topic-1', name: 'Time Value of Money', order: 0,
       los: [{ loId: 'lo-1', name: 'Discounting cash flows', order: 0,
-        materials: [{ materialId: 'material-1', name: 'Lecture notes', kind: 'lecture-notes' }], questionCounts: { draft: 1, approved: 0, archived: 0 }, gaps: ['no-approved-questions'] }] }], unassignedMaterials: [] } });
-    if (course && path.endsWith('/materials')) return route.fulfill({ json: [{ _id: 'material-1', name: 'Lecture notes', format: 'url', kind: 'lecture-notes', status: 'ready', assignments: [] }] });
-    if (course && path.endsWith('/materials/material-1/workspace')) return route.fulfill({ json: { material: { _id: 'material-1', name: 'Lecture notes', format: 'url', status: 'ready' },
+        materials: [{ materialId: 'material-1', name: 'Lecture notes', kind: 'lecture', status: 'ready' }], questionCounts: { draft: 1, approved: 0, archived: 0, 'pending-review': 0, reviewed: 0 }, gaps: ['no-approved-questions'] }] }], unassignedMaterials: [] } });
+    if (course && path.endsWith('/knowledge-graph')) return route.fulfill({ json: { nodes: [], edges: [] } });
+    if (course && path.endsWith('/materials')) return route.fulfill({ json: [{ _id: 'material-1', name: 'Lecture notes', format: 'txt', kind: 'lecture', status: 'ready', uploadedAt: '2026-10-01T00:00:00Z', assignments: [{ themeId: 'topic-1', loId: 'lo-1' }] }] });
+    if (course && path.endsWith('/materials/material-1/workspace')) return route.fulfill({ json: { material: { _id: 'material-1', name: 'Lecture notes', format: 'txt', status: 'ready', excerpt: 'Excerpt from the course source.' },
       chunks: [{ index: 0, text: 'Present value depends on the discount rate.', characterCount: 43 }] } });
     if (course && path.endsWith('/questions')) return route.fulfill({ json: { total: 1, questions: [{ id: 'question-1', state: 'draft',
       current: { stem: 'What is present value?', difficulty: 'easy' } }] } });
@@ -70,7 +90,8 @@ async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dar
     if (course && path.endsWith('/assessments')) return route.fulfill({ json: [] });
     if (course && path.endsWith('/session-summary')) return route.fulfill({ json: { welcome: false, deferred: null } });
     if (course && path.endsWith('/capabilities/me')) return route.fulfill({ json: {
-      'question.review': true, 'question.suggest-edit': true,
+      'question.review': options.questionReview ?? true, 'question.suggest-edit': true, 'question.mark-reviewed': true,
+      'flag.triage': options.flagTriage ?? true,
       'analytics.view': options.analyticsView ?? true,
       'analytics.individual': options.analyticsIndividual ?? true,
     } });
@@ -85,7 +106,11 @@ async function fixture(page: Page, role: Role, options: { theme?: 'light' | 'dar
       student: { puid: 'learner', uid: 'learner', displayName: 'Alex Learner' }, objectives: [], mastery: [], history: [], reviewBook: [], flags: [],
       engagement: { attempts: 0, sessions: 0, topicPracticeAttempts: 0, examPrepAttempts: 0 },
     } });
-    if (course && path.endsWith('/ta/review-queue')) return route.fulfill({ json: [] });
+    if (course && path.endsWith('/question-workspace')) {
+      return route.fulfill({ json: questionWorkspace(url.searchParams.get('tab') ?? 'review', { ...REVIEW_QUESTION, courseId: course._id }) });
+    }
+    if (path === '/api/questions/question-1') return route.fulfill({ json: REVIEW_QUESTION });
+    if (course && path.endsWith('/flags')) return route.fulfill({ json: [] });
     unhandled.push(path);
     return route.fulfill({ status: 404, json: { error: `Unconfigured role fixture: ${path}` } });
   });
@@ -136,27 +161,138 @@ test('TA aggregate access does not fetch named students when individual access i
   state.assertClean();
 });
 
-test('TA explores course content without Instructor controls or writes', async ({ page }) => {
+test('TA course navigation uses the Instructor workspaces with teaching-member reads', async ({ page }) => {
   const state = await fixture(page, 'ta', { path: `/ta/course/${COURSE}/overview` });
-  await expect(page.getByRole('heading', { name: 'Course Home' })).toBeVisible();
+  await expect(page.locator('.project-hero h1')).toHaveText(COURSES[0].name);
+  await expect(page.getByRole('heading', { name: 'Course snapshot' })).toBeVisible();
   const sidebar = page.locator('.sidebar');
+  await expect(sidebar.getByRole('link', { name: 'Course Dashboard', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(sidebar.getByRole('link', { name: 'My Courses', exact: true })).toBeHidden();
   await expect(sidebar.getByRole('link', { name: 'Help & Tutorials' })).toBeHidden();
-  await expect(sidebar.locator('.course-context__project')).toHaveCount(0);
   await expect(sidebar.getByRole('link', { name: 'Back to all courses' })).toBeVisible();
-  await sidebar.getByRole('link', { name: 'Materials' }).click();
-  await expect(page.getByRole('heading', { name: 'Materials' })).toBeVisible();
-  await page.getByRole('button', { name: 'Lecture notes' }).click();
+
+  await sidebar.getByRole('link', { name: 'Course Materials' }).click();
+  await expect(page.getByRole('heading', { name: 'Course Knowledge Workspace' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Preview Lecture notes' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Chunks' }).click();
   await expect(page.getByText('Present value depends on the discount rate.')).toBeVisible();
+  await page.getByRole('tab', { name: 'Metadata' }).click();
+  await expect(page.getByRole('heading', { name: 'LO coverage' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /trash|save assignments/i })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Import from Canvas' })).toHaveCount(0);
+
   await sidebar.getByRole('link', { name: 'Course Structure' }).click();
-  await expect(page.getByText('Discounting cash flows')).toBeVisible();
-  await sidebar.getByRole('link', { name: 'Coverage Map' }).click();
-  await expect(page.getByText('no approved questions')).toBeVisible();
-  await sidebar.getByRole('link', { name: 'Question Bank' }).click();
-  await expect(page.getByText('What is present value?')).toBeVisible();
+  await expect(page.locator('.outline-lo-name')).toHaveText('Discounting cash flows');
+  await page.getByRole('button', { name: /Discounting cash flows/ }).click();
+  await expect(page.getByRole('link', { name: 'Open supporting materials →' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /AI draft|Add objectives|Delete/ })).toHaveCount(0);
+
+  await page.getByRole('link', { name: 'Coverage Map →' }).click();
+  await expect(page.locator('.coverage-table')).toContainText('Discounting cash flows');
+  await expect(sidebar.getByRole('link', { name: 'Course Structure' })).toHaveAttribute('aria-current', 'page');
+  await page.getByRole('link', { name: 'Review questions →' }).click();
+  await expect(page.locator('.questions-reader__stem')).toHaveText('What is present value?');
+  await expect(sidebar.getByRole('link', { name: 'Questions' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('navigation', { name: 'Question status' }).getByRole('link', { name: /Student flags/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mark reviewed' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Team' }).click();
+  await expect(page.getByText('Suggest an edit', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Add a comment')).toBeVisible();
   await expect(page.getByRole('button', { name: /approve|publish|delete/i })).toHaveCount(0);
-  expect(state.requests.filter(url => ['/materials', '/content-map', '/questions'].some(suffix => url.pathname.endsWith(suffix)))
-    .every(url => url.pathname.startsWith(`/api/courses/${COURSE}/`))).toBe(true);
+  expect(state.requests.some(url => url.pathname === `/api/courses/${COURSE}`)).toBe(false);
+  expect(state.requests.some(url => /\/content-runs|\/trash|\/preseeding/.test(url.pathname))).toBe(false);
+  state.assertClean();
+});
+
+test('TA Questions keeps review, suggestions, comments and escalation available', async ({ page }) => {
+  const state = await fixture(page, 'ta', { path: `/ta/course/${COURSE}/questions?tab=review` });
+  let question = { ...REVIEW_QUESTION, openFlagCount: 1 };
+  const at = '2026-10-01T00:00:00Z';
+  const flag = {
+    id: 'flag-1', courseId: COURSE, questionId: question.id, questionVersionId: question.currentVersionId,
+    puid: 'student-1', createdAt: at, state: 'open', reason: 'Clarify the setup.',
+  };
+  const mutations: Array<[string, unknown]> = [];
+  await page.route(`**/api/courses/${COURSE}/question-workspace?*`, route => {
+    const tab = new URL(route.request().url()).searchParams.get('tab') ?? 'review';
+    return route.fulfill({ json: questionWorkspace(tab, question) });
+  });
+  await page.route('**/api/questions/question-1', route => route.fulfill({ json: question }));
+  await page.route(`**/api/courses/${COURSE}/flags?*`, route => route.fulfill({ json: [flag] }));
+  await page.route('**/api/questions/question-1/notes', route => {
+    const body = route.request().postDataJSON();
+    mutations.push(['note', body]);
+    const note = { puid: state.user.puid, text: body.text, at };
+    question = { ...question, internalNotes: [...question.internalNotes, note] };
+    return route.fulfill({ json: note });
+  });
+  await page.route('**/api/questions/question-1/suggestions', route => {
+    const patch = route.request().postDataJSON();
+    mutations.push(['suggestion', patch]);
+    const suggestion = { id: 'suggestion-1', puid: state.user.puid, patch, status: 'pending' as const, at };
+    question = { ...question, suggestions: [...question.suggestions, suggestion] };
+    return route.fulfill({ json: suggestion });
+  });
+  await page.route('**/api/questions/question-1/mark-reviewed', route => {
+    mutations.push(['reviewed', undefined]);
+    question = { ...question, state: 'reviewed' };
+    return route.fulfill({ json: question });
+  });
+  await page.route('**/api/flags/flag-1/escalate', route => {
+    mutations.push(['escalate', route.request().postDataJSON()]);
+    flag.state = 'escalated';
+    return route.fulfill({ json: flag });
+  });
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Mark reviewed' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Question marked as reviewed.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mark reviewed' })).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Team' }).click();
+  await page.getByLabel('Add a comment').fill('Check the example.');
+  await page.getByRole('button', { name: 'Add comment' }).click();
+  await expect(page.getByText('Check the example.', { exact: true })).toBeVisible();
+  await page.getByText('Suggest an edit', { exact: true }).click();
+  await page.getByLabel('Stem', { exact: true }).fill('What is the present value today?');
+  await page.getByRole('button', { name: 'Submit suggestion' }).click();
+  await expect(page.getByText('Stem: What is the present value today?', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Accept exactly' })).toHaveCount(0);
+  await page.getByRole('link', { name: /Student flags/ }).click();
+  await expect(page.getByText('Clarify the setup.', { exact: true })).toBeVisible();
+  await page.getByLabel('Recommendation').selectOption('archive');
+  await page.getByLabel('Note (optional)').fill('The setup is ambiguous.');
+  await page.getByRole('button', { name: 'Escalate with recommendation' }).click();
+  await expect(page.getByText('Recommendation sent to the instructor.')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Clear the flag|Archive the question|Correct the question/ })).toHaveCount(0);
+  expect(mutations).toEqual([
+    ['reviewed', undefined],
+    ['note', { text: 'Check the example.' }],
+    ['suggestion', { stem: 'What is the present value today?' }],
+    ['escalate', { recommendation: 'archive', note: 'The setup is ambiguous.' }],
+  ]);
+  state.assertClean();
+});
+
+test('TA with flag triage only can open Questions without reading the question bank', async ({ page }) => {
+  const state = await fixture(page, 'ta', { path: `/ta/course/${COURSE}/flags`, questionReview: false });
+  const sidebar = page.locator('.sidebar');
+  await expect(sidebar.getByRole('link', { name: 'Questions' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('navigation', { name: 'Question status' })).toHaveText('Student flags');
+  await expect(page.getByRole('heading', { name: 'No flags need attention' })).toBeVisible();
+  expect(state.requests.some(url => url.pathname.endsWith('/ta/flags'))).toBe(true);
+  expect(state.requests.some(url => url.pathname.endsWith('/question-workspace'))).toBe(false);
+  state.assertClean();
+});
+
+test('TA Questions respects flag denial and rejects direct authoring modes', async ({ page }) => {
+  const state = await fixture(page, 'ta', {
+    path: `/ta/course/${COURSE}/questions?tab=flags&q=question-1&mode=edit`, flagTriage: false,
+  });
+  await expect(page.locator('.questions-reader__stem')).toHaveText('What is present value?');
+  await expect(page.getByRole('navigation', { name: 'Question status' }).getByRole('link', { name: /Student flags/ })).toHaveCount(0);
+  await expect(page.getByRole('group', { name: 'Reader mode' }).getByRole('button').allTextContents()).resolves.toEqual(['Read', 'Preview']);
+  expect(state.requests.some(url => url.pathname.endsWith('/flags'))).toBe(false);
+  expect(state.requests.some(url => url.searchParams.get('tab') === 'flags')).toBe(false);
   state.assertClean();
 });
 
@@ -274,7 +410,7 @@ test('Admin role views keep usable TA and Student help without writing tutorial 
   await expect(page.locator('.help-lesson')).toHaveCount(4);
   await expect(page.locator('.help-lesson[data-tutorial-id^="student-"]')).toHaveCount(0);
   await page.getByRole('link', { name: 'Open page' }).first().click();
-  await expect(page.getByRole('heading', { name: 'Review Queue' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Questions', exact: true })).toBeVisible();
   await expect(taHelp).toBeHidden();
   await page.locator('.sidebar').getByRole('link', { name: 'Back to all courses' }).click();
   await expect(taHelp).toBeVisible();
@@ -303,67 +439,35 @@ for (const role of ['admin', 'instructor', 'ta'] as const) test(`${role} TA revi
     stem: 'What is the return when X = {{X}}?', options, paramSlots: [{ name: 'X' }], sourceRefs: [] };
   const sample = { seed: 3, parameterized: true, stem: 'What is the return when X = 10?',
     options: options.map((option, index) => ({ key: option.key, text: ['10%', '12%', '14%', '16%'][index], explanation: option.explanation })) };
-  const question = { id: 'question-1', courseId: COURSE, currentVersionId: current._id, currentVersion: 1,
+  const question = { ...REVIEW_QUESTION, currentVersionId: current._id, currentVersion: 1,
     state: 'draft', labels: [], loIds: [], themeIds: [], current, priority: 1, sample, suggestions: [], internalNotes: [], versions: [],
     agentDecision: { decision: 'pass', reasoning: 'Evidence and calculation checked. '.repeat(18), roleAssessment: '' } };
-  await page.route(`**/api/courses/${COURSE}/ta/review-queue`, route => route.fulfill({ json: [question] }));
+  await page.route(`**/api/courses/${COURSE}/question-workspace?*`, route => route.fulfill({ json: questionWorkspace('review', question) }));
   await page.route('**/api/questions/question-1', route => route.fulfill({ json: question }));
   if (role !== 'ta') await switchRole(page, role, 'ta');
   await page.locator('.course-card').first().click();
-  await expect(page.locator('.ta-reader-layout .question-stem')).toContainText('X = 10');
-  await expect(page.locator('.ta-reader-layout .question-stem')).not.toContainText('{{X}}');
-  await expect(page.locator('.ta-reader-layout .review-workbench__answer').first()).toContainText('10%');
+  const stem = page.locator('.questions-reader__stem');
+  const scroll = page.locator('.questions-reader__scroll');
+  await expect(stem).toContainText('X = 10');
+  await expect(stem).not.toContainText('{{X}}');
+  await expect(page.locator('.questions-reader__answers .gw-answer').first()).toContainText('10%');
   for (const width of [1280, 1440, 1728]) {
     await page.setViewportSize({ width, height: 800 });
-    const frame = await page.locator('.ta-review-workbench').boundingBox();
-    const actions = await page.locator('.ta-reader-actions').boundingBox();
-    const board = await page.getByRole('button', { name: /Question board/ }).boundingBox();
-    expect(frame).not.toBeNull();
-    expect(actions).not.toBeNull();
-    expect(board).not.toBeNull();
-    expect(frame!.y + frame!.height).toBeLessThanOrEqual(800);
-    expect(actions!.y + actions!.height).toBeLessThanOrEqual(800);
-    expect(board!.y + board!.height).toBeLessThanOrEqual(800);
-    const geometry = await page.locator('.ta-reader-layout').evaluate(element => {
-      const reader = element.querySelector<HTMLElement>('.review-workbench__body')!;
-      const inspector = element.querySelector<HTMLElement>('.review-workbench__inspector')!;
-      const scroll = element.closest<HTMLElement>('.ta-embedded')!;
-      scroll.scrollTop = 0;
-      return { width: element.getBoundingClientRect().width, readerWidth: reader.getBoundingClientRect().width,
-        inspectorWidth: inspector.getBoundingClientRect().width,
-        documentWidth: document.documentElement.scrollWidth };
-    });
-    expect(geometry.readerWidth).toBeGreaterThan(500);
-    expect(geometry.inspectorWidth).toBeGreaterThan(270);
-    expect(geometry.documentWidth).toBeLessThanOrEqual(width);
-    const content = await page.locator('.ta-reader-layout .review-workbench__body').boundingBox();
-    await page.mouse.move(content!.x + 80, content!.y + 70);
-    await page.mouse.wheel(0, 1000);
-    await expect.poll(() => page.locator('.ta-embedded').evaluate(element => element.scrollTop)).toBeGreaterThan(0);
-    await page.mouse.wheel(0, 5000);
-    await expect(page.getByLabel('Add a note')).toBeInViewport();
-    const after = await page.locator('.ta-reader-actions').boundingBox();
-    expect(Math.abs(after!.y - actions!.y)).toBeLessThanOrEqual(1);
-    if (role === 'ta' && width === 1728) await page.screenshot({ path: '/tmp/ta-review-scroll-fixed.png' });
-    await page.locator('.ta-embedded').evaluate(element => { element.scrollTop = 0; });
-    const inspector = await page.locator('.ta-reader-layout .review-workbench__inspector').boundingBox();
-    // On laptops the context follows the question; on wide screens it is
-    // beside it. Wheel input must reach the same outer reader in either case.
-    await page.locator('.ta-reader-layout .review-workbench__inspector h2').scrollIntoViewIfNeeded();
-    const context = await page.locator('.ta-reader-layout .review-workbench__inspector h2').boundingBox();
-    const scrollBefore = await page.locator('.ta-embedded').evaluate(element => element.scrollTop);
-    await page.mouse.move(inspector!.x + 30, context!.y + 30);
-    await page.mouse.wheel(0, width <= 1450 ? -500 : 500);
-    await expect.poll(() => page.locator('.ta-embedded').evaluate(element => element.scrollTop)).not.toBe(scrollBefore);
+    await scroll.evaluate(node => { node.scrollTop = 0; });
+    const content = await stem.boundingBox();
+    expect(content).not.toBeNull();
+    await page.mouse.move(content!.x + 80, content!.y + 8);
+    await page.mouse.wheel(0, 900);
+    await expect.poll(() => scroll.evaluate(node => node.scrollTop)).toBeGreaterThan(0);
   }
   for (const width of [390, 768, 850, 851]) {
     await page.setViewportSize({ width, height: 800 });
-    await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
-    await expect(page.locator('.ta-reader-layout .question-stem')).toBeVisible();
-    const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-    expect(documentWidth).toBeLessThanOrEqual(width);
-    await page.getByLabel('Add a note').scrollIntoViewIfNeeded();
-    await expect(page.getByLabel('Add a note')).toBeInViewport();
+    await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; });
+    if (width === 390 && !await stem.isVisible()) {
+      await page.locator('.questions-row__open').first().click();
+    }
+    await expect(stem).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   }
   state.assertClean();
 });

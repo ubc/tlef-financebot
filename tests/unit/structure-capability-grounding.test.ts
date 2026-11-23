@@ -85,10 +85,11 @@ it('keeps absent-selector planner, prompt and legacy runtime protocol hash byte-
   const { themes, evidence, sections } = fixture();
   expect(planCapabilityOutlineGrounding(themes, evidence, sections, 48000)).toEqual(planOutlineGrounding(themes, evidence, sections, 48000));
   expect(structureOutlineReviewProtocolHash()).toBe(outlineGroundingProtocolHash());
-  // These hashes freeze the unchanged pre-selector runtime sources.
+  // These hashes freeze the unchanged pre-selector runtime sources. Updated
+  // 2026-11-23: a final-attempt review failure withholds that objective, not the run.
   const legacyPins = {
-    "structure-outline-grounding.ts": "a6f9fa23f3b7b35c9f2dd52a85303953f9e4e3917c59356fdd0ef1c1e6acf366",
-    "structure-outline-review.ts": "35cf0002adee090161bf33644f72f03516abc07320ecacbd05064ed76dbe9d74"
+    "structure-outline-grounding.ts": "d37cc238119a47f998b714454a7266ec7b2db1ebbd9fb2bf1dfe9123e82f1b0f",
+    "structure-outline-review.ts": "eb886fa3608652c391c20fd883ad43823d5d53dddd3eb79fb0c3d6409014923a"
 };
   for (const [filename, expected] of Object.entries(legacyPins)) {
     expect(createHash('sha256').update(readFileSync(path.resolve(`server/src/services/${filename}`))).digest('hex')).toBe(expected);

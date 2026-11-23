@@ -34,7 +34,7 @@ export async function previewEvidence(courseId: string, materialId: string, chun
   } catch (e) { if (dialog.isConnected) content.replaceChildren(errorState(e instanceof Error ? e.message : String(e))); }
 }
 
-export function coverageGraph(courseId: string, graph: CourseKnowledgeGraph, focusLoIds: string[], onObjective: (id: string) => void): HTMLElement {
+export function coverageGraph(courseId: string, graph: CourseKnowledgeGraph, focusLoIds: string[], onObjective: (id: string) => void, role: 'ta' | 'instructor' = 'instructor'): HTMLElement {
   const root = el('section', { class: 'coverage-graph' });
   const inspector = el('aside', { class: 'coverage-inspector', 'aria-label': 'Node details' }, el('h2', { text: 'Explore relationships' }), el('p', { text: 'Select a node to inspect its details and connected evidence.' }));
   const canvas = el('div', { class: 'coverage-graph__canvas' });
@@ -96,7 +96,7 @@ export function coverageGraph(courseId: string, graph: CourseKnowledgeGraph, foc
         el('a', { class: 'btn btn--ghost', href: materialSourceUrl(courseId, node.materialId), target: '_blank', rel: 'noopener', text: 'Open original file ↗' }));
     }
     if (node.type === 'lo') extra.append(action('View objective coverage', () => onObjective(node.id.slice(3))));
-    if (node.type === 'topic') extra.append(el('a', { class: 'btn btn--ghost', href: `#/instructor/course/${courseId}/structure`, text: 'Open Course Structure' }));
+    if (node.type === 'topic') extra.append(el('a', { class: 'btn btn--ghost', href: `#/${role}/course/${encodeURIComponent(courseId)}/structure`, text: 'Open Course Structure' }));
     const links = edges.filter(e => e.source === node.id || e.target === node.id);
     extra.append(el('h3', { text: 'Connections' }), ...links.map(e => {
       const neighbor = nodes.find(n => n.id === (e.source === node.id ? e.target : e.source))!;

@@ -1,5 +1,5 @@
 import type { ObjectId, WithId } from 'mongodb';
-import { auditCol, capabilitySettingsCol, courseInstructorSharesCol, coursePeopleAccessCol, coursePeopleImportsCol, coursesCol, taInvitesCol, usersCol } from '../components/mongodb/collections';
+import { attemptsCol, auditCol, capabilitySettingsCol, courseInstructorSharesCol, coursePeopleAccessCol, coursePeopleImportsCol, coursesCol, taInvitesCol, usersCol } from '../components/mongodb/collections';
 import { canvasLinks } from './canvas.service';
 import { env } from '../config/env';
 import { resolveTeachingIdentity } from './teaching-identity.service';
@@ -80,6 +80,18 @@ async function directory(courseId: ObjectId, actor: Actor) {
   }
   return { course, canManage, people: [...rows.values()] };
 }
+
+export async function courseStudentActivity(courseId: ObjectId, actor: Actor, now = new Date()) {
+  const { people } = await directory(courseId, actor);
+  const students = people.filter(row => row.role === 'student' && ['active', 'pending', 'expired'].includes(row.status));
+  const puids = students.flatMap(row => row.puid ? [row.puid] : []);
+  const windowDays = 7;
+  const active = puids.length ? await attemptsCol().distinct('puid', {
+    courseId, puid: { $in: puids }, createdAt: { $gte: new Date(now.getTime() - windowDays * 86_400_000), $lte: now },
+  }) : [];
+  return { enrolled: students.length, active: active.length, usageRate: students.length ? active.length / students.length : null, windowDays };
+}
+
 export async function listCoursePeople(courseId: ObjectId, actor: Actor, options: { page?: number; pageSize?: number; search?: string; role?: CourseRole; status?: string; tab?: 'people' | 'invitations' } = {}): Promise<CoursePeoplePage> {
   const data = await directory(courseId, actor);
   const search = options.search?.trim().toLowerCase() ?? '';

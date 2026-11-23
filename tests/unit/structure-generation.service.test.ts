@@ -1,7 +1,7 @@
 jest.mock('../../server/src/components/mongodb/collections', () => ({ materialsCol: jest.fn(), materialChunksCol: jest.fn(), themesCol: jest.fn(), losCol: jest.fn(), contentRunsCol: jest.fn(), sourceEvidenceExtractionsCol: jest.fn(), coursesCol: jest.fn(() => ({ findOne: async () => ({}) })) }));
 jest.mock('../../server/src/components/genai/llm', () => ({ completeJson: jest.fn() }));
 jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enqueueJob: jest.fn() }));
-jest.mock('../../server/src/services/admin.service', () => ({ utilityStepConfig: jest.fn(async () => ({ model: 'test-model' })) }));
+jest.mock('../../server/src/services/admin.service', () => ({ utilityStepConfig: jest.fn(async () => ({ model: 'test-model' })), outlineOrganizerStepConfig: jest.fn(async () => ({ model: 'test-model' })) }));
 jest.mock('../../server/src/services/content-runs.service', () => ({ assertContentRunActive: jest.fn(), claimStructureGenerationRun: jest.fn(), updateContentRun: jest.fn(), createStructureGenerationRun: jest.fn(), getContentRun: jest.fn(), failContentRun: jest.fn() }));
 jest.mock('../../server/src/services/model-usage.service', () => ({ withModelUsage: jest.fn(async (_scope: unknown, work: () => Promise<unknown>) => work()) }));
 jest.mock('../../server/src/services/source-readiness.service', () => ({ ...jest.requireActual('../../server/src/services/source-readiness.service'), assertSourceSelectionReady: jest.fn(), getMaterialSourceReadiness: jest.fn() }));
@@ -21,7 +21,7 @@ import { ObjectId, type WithId } from 'mongodb';
 import { materialsCol, materialChunksCol, themesCol, losCol, contentRunsCol, sourceEvidenceExtractionsCol } from '../../server/src/components/mongodb/collections';
 import { completeJson } from '../../server/src/components/genai/llm';
 import { assertContentRunActive, claimStructureGenerationRun, failContentRun, getContentRun, updateContentRun, createStructureGenerationRun } from '../../server/src/services/content-runs.service';
-import { generateStructure, runStructureGeneration, loadStructureCorpus, partialStructure, validateExtraction, validateOutline, enqueueStructureGeneration, sourcePassages, validateReferencedExtraction, validateSourceExtraction, validateCachedSourceExtraction, structureSynthesisLedger, structureSynthesisPacks, structureCorpusFingerprint, sourceExtractionPrompt,
+import { OUTLINE_LO_WORDING_RULES, STRUCTURE_UNITS_PER_SECTION, normalizeBatchExtraction, structureEstimatedTokenCeiling, generateStructure, runStructureGeneration, loadStructureCorpus, partialStructure, validateExtraction, validateOutline, enqueueStructureGeneration, sourcePassages, validateReferencedExtraction, validateSourceExtraction, validateCachedSourceExtraction, structureSynthesisLedger, structureSynthesisPacks, structureCorpusFingerprint, sourceExtractionPrompt,
   enqueueStructureOutlineCoverageRepair, getStructureOutlineRepairView, assertStructureRepairAdoptable, finalizeStructureCoverage, continueStructureReview } from '../../server/src/services/structure-generation.service';
 import * as reviewCheckpoint from '../../server/src/services/structure-review-checkpoint.service';
 import { planOutlineGrounding, outlineGroundingProtocolHash } from '../../server/src/services/structure-outline-grounding';
@@ -391,6 +391,27 @@ it('reviews an explicitly pinned small outline even when hierarchical organizati
     capabilityDistinctness: { complete: true, eligibleIds: ['L1'], held: [] } });
 });
 
+it('writes the final outline with the Outline organizer model and everything else with Utility', async () => {
+  const admin = jest.requireMock('../../server/src/services/admin.service') as { outlineOrganizerStepConfig: jest.Mock };
+  admin.outlineOrganizerStepConfig.mockResolvedValueOnce({ model: 'organizer-model' });
+  successfulSourceModel();
+  await generateStructure(courseId, {});
+  const calls = jest.mocked(completeJson).mock.calls.map(([prompt, options]) => ({ extract: prompt.startsWith('Extract'), model: options?.model }));
+  expect(calls.filter(call => call.extract).every(call => call.model === 'test-model')).toBe(true);
+  expect(calls.filter(call => !call.extract).map(call => call.model)).toEqual(['organizer-model']);
+});
+
+it('sends the LO wording rules with every outline call', async () => {
+  successfulSourceModel();
+  await generateStructure(courseId, {});
+  const outlinePrompts = jest.mocked(completeJson).mock.calls.map(([prompt]) => prompt).filter(prompt => !prompt.startsWith('Extract'));
+  expect(outlinePrompts.length).toBeGreaterThan(0);
+  for (const prompt of outlinePrompts) for (const rule of OUTLINE_LO_WORDING_RULES) expect(prompt).toContain(rule);
+  // Instructor decision 2026-11-23: concise, but no fixed word limit.
+  expect(OUTLINE_LO_WORDING_RULES.join(' ')).toMatch(/no fixed word limit/);
+  expect(OUTLINE_LO_WORDING_RULES.join(' ')).not.toMatch(/at most \d+ words/);
+});
+
 it('refuses an unknown explicit capability protocol before source reads or model work', async () => {
   await expect(generateStructure(courseId, { capabilityDistinctnessProtocol: 'foreign' as never })).rejects.toThrow('structure-capability-protocol-unsupported');
   expect(materialsCol).not.toHaveBeenCalled(); expect(completeJson).not.toHaveBeenCalled();
@@ -398,15 +419,18 @@ it('refuses an unknown explicit capability protocol before source reads or model
 
 it('records an insufficient whole-review minimum and refuses its first review send without increasing the allowance', async () => {
   successfulSourceModel();
-  const settings = env as unknown as { authoringMaxEstimatedTokens: number };
+  // A structure run's ceiling is sized to its corpus within the structure cap,
+  // so the operator limit that binds here is the structure cap.
+  const settings = env as unknown as { authoringMaxEstimatedTokens: number; authoringStructureMaxEstimatedTokens: number };
   const previous = settings.authoringMaxEstimatedTokens; settings.authoringMaxEstimatedTokens = 1;
+  const previousStructure = settings.authoringStructureMaxEstimatedTokens; settings.authoringStructureMaxEstimatedTokens = 1;
   try {
     await expect(generateStructure(courseId, { capabilityDistinctnessProtocol: 'outline-capability-distinctness-v1' }, new ObjectId()))
       .rejects.toThrow('structure-capability-review-budget-insufficient');
     expect(jest.mocked(completeJson).mock.calls.some(([, options]) => options?.usageContext?.stage === 'outline-source-review')).toBe(false);
     const plans = jest.mocked(updateContentRun).mock.calls.flatMap(([, update]) => update.structureDiagnostics?.synthesisInput?.capabilityReviewPlan ?? []);
     expect(plans).toContainEqual(expect.objectContaining({ fits: false, remainingUnits: 1, batches: 1 }));
-  } finally { settings.authoringMaxEstimatedTokens = previous; }
+  } finally { settings.authoringMaxEstimatedTokens = previous; settings.authoringStructureMaxEstimatedTokens = previousStructure; }
 });
 
 it('refuses historical wording/coverage repair of a capability-aware parent before queueing or claiming another cycle', async () => {
@@ -622,7 +646,7 @@ it('preserves completed cache units and names unfinished sections after a worker
   expect(jest.mocked(updateContentRun).mock.calls.at(-1)?.[1].structureDiagnostics?.cache.extractedSections).toBe(2);
 });
 
-it('runs at most two independent extraction batches and merges completion in source order', async () => {
+it('runs up to the configured four extraction batches at once and merges completion in source order', async () => {
   sourceRows = Array.from({ length: 5 }, (_, index) => ({ _id: new ObjectId(), name: `Chapter ${index + 1}` }));
   chunks = sourceRows.map((source, index) => ({ courseId, materialId: source._id, index: 0, text: `Chapter ${index + 1} original definition.`, characterCount: 29, createdAt: new Date() }));
   successfulSourceModel();
@@ -635,7 +659,7 @@ it('runs at most two independent extraction batches and merges completion in sou
     const value = await success(prompt, options); active--; return value;
   });
   const result = await generateStructure(courseId, {});
-  expect(maximum).toBe(2);
+  expect(maximum).toBe(4);
   expect(result.evidence.map(row => row.materialName)).toEqual(sourceRows.map(row => row.name));
 });
 
@@ -1115,16 +1139,17 @@ it('retains both bounded malformed-review failures without claiming a completed 
       const checked = supportedOriginalReview(prompt.split('\nThe review schema or objective/source identities were invalid.')[0]);
       return { reviews: options.usageContext.candidateAttempt ? [checked.reviews[0], checked.reviews[0]] : checked.reviews.slice(1) } as never;
     });
-    await expect(generateStructure(courseId, {}, new ObjectId())).rejects.toThrow('structure-grounding-review-identity');
-    const partial = finalReviewDiagnostics().outlineGrounding!;
-    expect(partial).toMatchObject({ totalObjectives: 36, withheldObjectives: 0, complete: false });
-    expect(partial.reviewedObjectives).toBeGreaterThan(0); expect(partial.reviewedObjectives).toBeLessThan(36);
-    expect(partial.supportedObjectives).toBe(partial.reviewedObjectives); expect(partial.findings).toHaveLength(partial.reviewedObjectives);
-    expect(finalReviewDiagnostics().synthesisInput?.validationFailures).toEqual([
-      { stage: 'outline-source-review', item: 0, attempt: 0, reason: 'structure-grounding-review-incomplete' },
-      { stage: 'outline-source-review', item: 0, attempt: 1, reason: 'structure-grounding-review-identity' },
-    ]);
-    expect(jest.mocked(completeJson).mock.calls.filter(([, options]) => options?.usageContext?.stage === 'outline-source-review')).toHaveLength(2);
+    // 2026-11-23: a requested objective that is still malformed after its one
+    // correction is withheld; the rest of the review completes.
+    const result = await generateStructure(courseId, {}, new ObjectId());
+    const review = result.coverage.outlineGrounding!;
+    expect(review).toMatchObject({ totalObjectives: 36, reviewedObjectives: 36, complete: true });
+    const withheld = review.findings.filter(row => /could not complete/.test(row.reason));
+    // The scripted reviewer drops the first objective of each of the three batches.
+    expect(withheld.map(row => row.id)).toEqual(['L1', 'L13', 'L25']);
+    for (const row of withheld) expect(row).toMatchObject({ status: 'uncertain', citedSourceIds: [], coveredEvidenceIds: [], reason: expect.stringContaining('structure-grounding-review-identity') });
+    expect(finalReviewDiagnostics().synthesisInput?.validationFailures?.[0]).toEqual(
+      { stage: 'outline-source-review', item: 0, attempt: 0, reason: 'structure-grounding-review-incomplete' });
   });
 });
 
@@ -1138,16 +1163,14 @@ it.each(['missing', 'empty', 'unknown'])('withholds a supported verdict with %s 
       const invalid = omission === 'missing' ? withoutCoverage : { ...withoutCoverage, coveredEvidenceIds: omission === 'empty' ? [] : ['unseen-learning-point'] };
       return { reviews: [invalid, ...checked.reviews.slice(1)] } as never;
     });
-    await expect(generateStructure(courseId, {}, new ObjectId())).rejects.toThrow();
-    const diagnostics = finalReviewDiagnostics();
-    expect(diagnostics.outlineGrounding).toMatchObject({ totalObjectives: 36, complete: false });
-    expect(diagnostics.outlineGrounding!.reviewedObjectives).toBeGreaterThan(0);
-    expect(diagnostics.outlineGrounding!.supportedObjectives).toBe(diagnostics.outlineGrounding!.reviewedObjectives);
-    expect(diagnostics.outlineGrounding!.findings.every(row => row.id !== 'L1')).toBe(true);
-    expect(diagnostics.synthesisInput?.validationFailures?.map(({ stage, item, attempt }) => ({ stage, item, attempt }))).toEqual([
-      { stage: 'outline-source-review', item: 0, attempt: 0 }, { stage: 'outline-source-review', item: 0, attempt: 1 },
-    ]);
-    expect(jest.mocked(completeJson).mock.calls.filter(([, options]) => options?.usageContext?.stage === 'outline-source-review')).toHaveLength(2);
+    // After its one correction the objective is withheld instead of failing
+    // every objective in the run.
+    const result = await generateStructure(courseId, {}, new ObjectId());
+    const review = result.coverage.outlineGrounding!;
+    expect(review).toMatchObject({ totalObjectives: 36, reviewedObjectives: 36, complete: true });
+    expect(review.findings.find(row => row.id === 'L1')).toMatchObject({ status: 'uncertain', coveredEvidenceIds: [],
+      reason: expect.stringMatching(omission === 'empty' ? /^Automatic review could not cite/ : /^Automatic review could not complete/) });
+    expect(review.withheldObjectives).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -1179,6 +1202,69 @@ it('removes an uncovered cited point and its material from an admitted merged ob
     expect(result.coverage.outlineGrounding).toMatchObject({ totalObjectives: 35, reviewedObjectives: 35, supportedObjectives: 35, complete: true });
     expect(result.coverage.materials.map(row => row.mappedObjectives)).toEqual([12, 11, 12]);
     expect(finalReviewDiagnostics().outlineGrounding).toEqual(result.coverage.outlineGrounding);
+  });
+});
+
+function uncreditedE13Model(base: LargeOutlineModel, gap: (prompt: string, stage: string) => unknown): LargeOutlineModel {
+  return async (prompt, options) => {
+    const stage = options?.usageContext?.stage;
+    if (stage === 'outline-organization') {
+      const value = await base(prompt, options) as ReturnType<typeof finalObjectivesPerOriginal>;
+      value.themes[0].los[0].evidenceIds = ['E1', 'E13'];
+      value.themes[0].los = value.themes[0].los.filter(lo => lo.evidenceIds[0] !== 'E13');
+      return value as never;
+    }
+    if (stage === 'outline-source-review') {
+      const checked = supportedOriginalReview(prompt);
+      const data: { objectives: Array<{ id: string; learningPoints: Array<{ id: string; sourceIds: string[] }> }> } = JSON.parse(prompt.split('\n\n').at(-1)!);
+      const first = data.objectives.find(objective => objective.id === 'L1');
+      if (first) { checked.reviews[0].coveredEvidenceIds = ['E1']; checked.reviews[0].sourceIds = first.learningPoints.find(point => point.id === 'E1')!.sourceIds; }
+      return checked as never;
+    }
+    if (stage === 'outline-gap-check' || stage === 'outline-gap-fill') return gap(options?.systemPrompt ? `${options.systemPrompt}\n${prompt}` : prompt, stage) as never;
+    if (stage === 'outline-gap-review') return supportedOriginalReview(prompt.split('\nThe review schema or objective/source identities were invalid.')[0]) as never;
+    return await base(prompt, options) as never;
+  };
+}
+
+it('credits an uncovered point to the existing LO the gap check says teaches it', async () => {
+  await withLargeOriginalReview(async base => {
+    jest.mocked(completeJson).mockImplementation(uncreditedE13Model(base, (prompt, stage) => {
+      expect(stage).toBe('outline-gap-check');
+      expect(prompt).toContain('T1.L1');
+      return { points: [{ id: 'E13', role: 'core', coveredBy: ['T1.L1'], reason: 'Same capability.' }] };
+    }));
+    const result = await generateStructure(courseId, {}, new ObjectId());
+    expect(result.themes[0].los[0].evidenceIds).toEqual(['E1', 'E13']);
+    expect(result.coverage.unmappedEvidenceIds).toEqual([]);
+    expect(result.coverage.gapPass).toMatchObject({ checkedPoints: 1, labelledPoints: 1, creditedPoints: 1, coreGapsBeforeFill: 0, remainingGapIds: [],
+      points: [{ id: 'E13', role: 'core', reason: 'Same capability.' }] });
+    expect(result.coverage.warnings.some(warning => warning.startsWith('Coverage gap pass: 1 of 1'))).toBe(true);
+  });
+});
+
+it('writes, source-reviews and appends a new LO for a core gap no LO teaches', async () => {
+  await withLargeOriginalReview(async base => {
+    jest.mocked(completeJson).mockImplementation(uncreditedE13Model(base, (prompt, stage) => {
+      if (stage === 'outline-gap-check') return { points: [{ id: 'E13', role: 'core', coveredBy: [], reason: 'Not taught by any LO.' }] };
+      const outline: Array<{ topic: string }> = JSON.parse(prompt.split('OUTLINE:\n')[1]!.split('\n')[0]!);
+      return { objectives: [{ topic: outline[0]!.topic, name: 'Apply the newly covered original principle with its limiting assumptions.', evidenceIds: ['E13'] }] };
+    }));
+    const result = await generateStructure(courseId, {}, new ObjectId());
+    expect(result.coverage.unmappedEvidenceIds).toEqual([]);
+    expect(result.themes[0].los.at(-1)).toMatchObject({ name: 'Apply the newly covered original principle with its limiting assumptions.', evidenceIds: ['E13'] });
+    expect(result.coverage.gapPass).toMatchObject({ coreGapsBeforeFill: 1, newObjectives: { proposed: 1, supported: 1, withheld: 0 }, remainingGapIds: [] });
+    const stages = jest.mocked(completeJson).mock.calls.map(([, options]) => options?.usageContext?.stage);
+    expect(stages.filter(stage => stage === 'outline-gap-review')).toHaveLength(1);
+  });
+});
+
+it('keeps the reviewed outline when the gap pass fails', async () => {
+  await withLargeOriginalReview(async base => {
+    jest.mocked(completeJson).mockImplementation(uncreditedE13Model(base, () => { throw new Error('synthetic gap failure'); }));
+    const result = await generateStructure(courseId, {}, new ObjectId());
+    expect(result.coverage.unmappedEvidenceIds).toEqual(['E13']);
+    expect(result.coverage.gapPass).toMatchObject({ failure: 'synthetic gap failure', creditedPoints: 0, remainingGapIds: ['E13'] });
   });
 });
 
@@ -1342,5 +1428,60 @@ describe('continuation worker inherited budget coherence', () => {
   it('never widens a coherent smaller inherited worker output cap to the required6000', async () => {
     const row = await setup(); row.body.baseBudget.limits.maxOutputTokens = 4000; row.progress.continuationBaseBudget!.limits.maxOutputTokens = 4000;
     await expect(continueStructureReview(row.childId, row.observer)).rejects.toThrow('structure-review-budget-exhausted'); beforeAnyDispatch();
+  });
+});
+
+describe('structureEstimatedTokenCeiling', () => {
+  it('keeps the general default for small selections', () => {
+    expect(structureEstimatedTokenCeiling(0)).toBe(2_000_000);
+    expect(structureEstimatedTokenCeiling(100)).toBe(2_000_000);
+  });
+  it('grows with the corpus so an eight-lecture course can finish its review', () => {
+    // 2026-11-23: 254 sections stopped at 1,952,046 of 2,000,000 units, review 38/94.
+    expect(structureEstimatedTokenCeiling(254)).toBe(254 * STRUCTURE_UNITS_PER_SECTION);
+    expect(structureEstimatedTokenCeiling(254)).toBeGreaterThan(2_700_000);
+  });
+  it('never exceeds the structure ceiling', () => {
+    expect(structureEstimatedTokenCeiling(100_000)).toBe(12_000_000);
+  });
+});
+
+describe('normalizeBatchExtraction', () => {
+  async function twoSections() {
+    const { sections } = await loadStructureCorpus(courseId);
+    const a = { ...sections[0], id: 'C1.S1', text: 'First premise of A. '.repeat(30) + 'Condition of A.' };
+    const b = { ...sections[0], id: 'C1.S2', text: 'First premise of B. '.repeat(30) + 'Condition of B.' };
+    return { a, b, pa: sourcePassages(a).map(p => p.id), pb: sourcePassages(b).map(p => p.id) };
+  }
+  it('moves a point filed under the wrong section of the batch to the section that owns its passage', async () => {
+    const { a, b, pa, pb } = await twoSections();
+    const raw = [
+      { sectionId: a.id, objectives: [{ name: 'Explain A', passageId: pa[0], supportingPassageIds: pa.slice(1) },
+        { name: 'Explain B', passageId: pb[0], supportingPassageIds: pb.slice(1) }] },
+      { sectionId: b.id, objectives: [] },
+    ];
+    const rows = normalizeBatchExtraction(raw, [a, b]) as Array<{ sectionId: string; objectives: Array<{ name: string }> }>;
+    expect(rows[0]!.objectives.map(o => o.name)).toEqual(['Explain A']);
+    expect(rows[1]!.objectives.map(o => o.name)).toEqual(['Explain B']);
+    expect(validateSourceExtraction({ sections: rows }, [a, b], true)).toHaveLength(2);
+  });
+  it('drops supporting IDs from another section and dispositions that conflict or repeat', async () => {
+    const { a, b, pa, pb } = await twoSections();
+    const raw = [{ sectionId: a.id, objectives: [{ name: 'Explain A', passageId: pa[0], supportingPassageIds: [...pa.slice(1), pb[0]] }],
+      passageDispositions: [{ passageId: pa[0], disposition: 'context', reason: 'Also cited.' }] },
+    { sectionId: b.id, objectives: [{ name: 'Explain B', passageId: pb[0], supportingPassageIds: pb.slice(1, -1) }],
+      passageDispositions: [{ passageId: pb.at(-1), disposition: 'context', reason: 'Support.' }, { passageId: pb.at(-1), disposition: 'context', reason: 'Again.' }] }];
+    expect(() => validateSourceExtraction({ sections: raw }, [a, b], true)).toThrow();
+    const rows = normalizeBatchExtraction(raw, [a, b]);
+    const checked = validateSourceExtraction({ sections: rows }, [a, b], true);
+    expect(checked[0]!.objectives[0]!.supportingPassages?.map(p => p.passageId)).toEqual(pa.slice(1));
+    expect(checked[1]!.passageDispositions).toHaveLength(1);
+  });
+  it('leaves an unrepairable reply for the validator and its correction', async () => {
+    const { a, b } = await twoSections();
+    const raw = [{ sectionId: a.id, objectives: [{ name: 'Invented', passageId: 'C9.S9.P1' }] }, null, 'junk'];
+    const rows = normalizeBatchExtraction(raw, [a, b]);
+    expect(rows).toEqual(raw);
+    expect(() => validateSourceExtraction({ sections: [rows[0]] }, [a], true)).toThrow('Use a passage ID belonging to C1.S1.');
   });
 });

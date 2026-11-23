@@ -130,6 +130,21 @@ export interface StructureConditionContext {
   hash: string;
 }
 
+export type GapRole = 'core' | 'example' | 'overview' | 'admin';
+/** Post-review coverage gap pass (docs/superpowers/specs/2026-11-23-structure-coverage-gap-pass-design.md). */
+export interface GapPassReceipt {
+  version: 'coverage-gap-pass-v1';
+  checkedPoints: number;
+  labelledPoints: number;
+  creditedPoints: number;
+  roles: Record<GapRole, number>;
+  coreGapsBeforeFill: number;
+  newObjectives: { proposed: number; supported: number; withheld: number };
+  remainingGapIds: string[];
+  points: Array<{ id: string; role: GapRole | 'unlabelled'; coveredBy: string[]; reason: string }>;
+  failure?: string;
+}
+
 export interface StructureResult {
   themes: Array<{ name: string; los: Array<{ name: string; evidenceIds: string[]; materialIds: string[] }> }>;
   evidence: StructureEvidence[];
@@ -146,6 +161,8 @@ export interface StructureResult {
     /** Large final merges are checked against originals; withheld wording is
      * diagnostic data and never part of the selectable themes. */
     outlineGrounding?: OutlineGroundingReceipt;
+    /** Model-labelled gaps, credits to existing LOs and reviewed new LOs. */
+    gapPass?: GapPassReceipt;
     materials: Array<{ materialId: string; name: string; chunks: number; sections: number; mappedObjectives: number }>;
     analyzedSections: number;
     extractedObjectives: number;

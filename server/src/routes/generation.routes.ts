@@ -19,8 +19,11 @@ import {
   enqueueGenerationPlan,
   PLAN_MAX_CELLS,
   PLAN_MAX_COUNT,
+  PLAN_MAX_QUESTIONS,
 } from '../services/generation-plan.service';
 import { enqueueBlueprintRun } from '../services/generation-blueprints.service';
+import { exceptionDiagnostics } from '../services/exception-diagnostics';
+import { operationContext } from '../services/operation-context';
 
 // Generation pipeline endpoints (PRD §9.1, IN-Q10). Both routes are
 // course-scoped (`:courseId` in the path), so they guard exactly like
@@ -134,7 +137,8 @@ const planCell = z.object({
 }, {
   message: 'secondaryLoIds must be distinct and must not repeat loId.',
 });
-const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional() });
+const planBody = z.object({ cells: z.array(planCell).min(1).max(PLAN_MAX_CELLS).refine(cells => cells.reduce((sum, cell) => sum + cell.count, 0) <= PLAN_MAX_QUESTIONS,
+  { message: `A batch can have at most ${PLAN_MAX_QUESTIONS} questions.` }), submissionId: z.string().uuid().optional(), prompt: z.string().trim().max(4000).optional() });
 
 /**
  * GET /api/courses/:courseId/generation-plan -> the Auto plan: every active LO
@@ -189,8 +193,9 @@ generationRouter.post(
 
 /**
  * POST /api/courses/:courseId/questions/:questionId/regenerate { prompt }
- * -> { variant }: an UNSAVED side-by-side variant from the two-call pipeline.
- * The service records only request provenance; the instructor's Replace saves
+ * Returns an unsaved variant. Clients accepting text/event-stream receive
+ * progress and draft previews on this same POST, followed by the final result.
+ * The service records only request provenance. The instructor's Replace saves
  * it through the existing PATCH edit route.
  */
 generationRouter.post(
@@ -202,7 +207,57 @@ generationRouter.post(
     const params = req.params as z.infer<typeof regenerationParams>;
     const body = req.body as z.infer<typeof regenerationBody>;
     const questionId = new ObjectId(params.questionId); const courseId = new ObjectId(params.courseId);
-    res.json(await regenerateQuestionVariant({ questionId, courseId, prompt: body.prompt, byPuid: req.user!.puid }));
+    const input = { questionId, courseId, prompt: body.prompt, byPuid: req.user!.puid };
+    if (req.accepts(['application/json', 'text/event-stream']) !== 'text/event-stream') {
+      res.json(await regenerateQuestionVariant(input));
+      return;
+    }
+
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    const stopHeartbeat = (): void => { if (heartbeat) clearInterval(heartbeat); };
+    const write = (event: 'progress' | 'preview' | 'result' | 'error', data: unknown): void => {
+      if (res.destroyed || res.writableEnded) return;
+      if (!res.headersSent) {
+        res.set({
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache, no-transform',
+          'X-Accel-Buffering': 'no',
+        });
+        res.flushHeaders();
+        heartbeat = setInterval(() => {
+          if (!res.destroyed && !res.writableNeedDrain) res.write(': heartbeat\n\n');
+        }, 20_000);
+      }
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    res.once('close', stopHeartbeat);
+    try {
+      const result = await regenerateQuestionVariant(input, {
+        stage: (stage) => write('progress', { stage }),
+        preview: (preview) => { if (!res.writableNeedDrain) write('preview', preview); },
+        checkpoint: async () => { if (res.destroyed) throw new Error('regeneration-disconnected'); },
+      });
+      write('result', result);
+      if (!res.destroyed) res.end();
+    } catch (error) {
+      if (res.destroyed) return;
+      if (!res.headersSent) throw error;
+      const code = error instanceof Error ? error.message : '';
+      const knownStatus = Object.hasOwn(GENERATION_ERROR_STATUS, code) ? GENERATION_ERROR_STATUS[code] : undefined;
+      const status = knownStatus ?? (code === 'source-not-ready' ? 409 : 500);
+      if (status === 500) {
+        const exception = exceptionDiagnostics(error);
+        res.locals.operationException = exception;
+        console.error('[http.exception]', JSON.stringify({ requestId: operationContext.getStore() ?? null, exception, headersSent: true }));
+      }
+      const errorCode = status === 500 ? 'regeneration-failed' : code;
+      res.locals.operationStreamError = errorCode;
+      write('error', { status, error: errorCode });
+      res.end();
+    } finally {
+      stopHeartbeat();
+      res.off('close', stopHeartbeat);
+    }
   },
 );
 

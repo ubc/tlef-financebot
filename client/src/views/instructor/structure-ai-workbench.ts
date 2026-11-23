@@ -1,7 +1,7 @@
 import { createOutlineConsolidationPanel } from './outline-consolidation-panel.js';
 import type { StructureConsolidationView } from '../../api.js';
 import {
-  applySuggestedHierarchy, endContentRun, getContentRun, listContentRuns, startStructureGeneration, subscribeContentRuns,
+  applySuggestedHierarchy, endContentRun, getContentRun, getContentRunUsage, listContentRuns, startStructureGeneration, subscribeContentRuns,
   getSourceReadiness, listMaterials,
   suggestedHierarchyApplyFailure,
   type ContentRunSummary, type Material, type OutlineGroundingFinding, type StructureDraft, type StructureGenerationRun, type StructureOptions, type StructureResult, type StructureRepairView,
@@ -13,6 +13,7 @@ import { previewEvidence } from './coverage-graph.js';
 import { getSession } from '../../auth.js';
 import { buildStructureCoverageReviewModel, createStructureCoverageDiagnostics, createStructureSourceCoverage } from './structure-source-coverage.js';
 import { createOutlineRepairPanel } from './outline-repair-panel.js';
+import { renderModelCalls, renderModelUsage } from '../../model-usage-ui.js';
 
 type SelectedTheme = Omit<StructureResult['themes'][number], 'los'> & { checked: boolean; los: Array<StructureResult['themes'][number]['los'][number] & { checked: boolean; sourceThemeIndex: number; sourceLoIndex: number }> };
 const failureMessage = (code: string) => ({
@@ -28,6 +29,7 @@ const failureMessage = (code: string) => ({
   'structure-grounding-objective-too-large': 'An objective needs more original source text than one review can safely check. Try a smaller source selection or more focused objectives. No objectives were saved.',
   'structure-grounding-original-unavailable': 'An objective could not be matched to its exact original source passages. Check the source files and generate again. No objectives were saved.',
   'structure-budget-exhausted': 'The analysis reached its model budget before the draft was complete. Completed source analysis is retained. Review the diagnostics before generating again.',
+  'structure-review-budget-exhausted': 'The source review reached its model budget before every objective was checked. Your source analysis is saved, so generating again reuses it and is much faster. Your course outline is unchanged.',
   'structure-enqueue-failed': 'Generation could not be queued. Please try again.',
   'server-restarted': 'Generation was interrupted by a server restart. Generate again to continue.',
   'generation-ended': 'Generation stopped. Your saved course outline is unchanged.',
@@ -131,6 +133,10 @@ export function createStructureAssistant(courseId: string, materials: Material[]
   const content = el('section', { class: 'structure-ai-drafts', 'aria-label': 'Draft objectives' });
   const coverage = el('details', { class: 'structure-ai-coverage' });
   const grounding = el('details', { class: 'structure-ai-coverage', 'aria-label': 'Original-source review' });
+  const usagePanel = el('details', { class: 'structure-ai-coverage structure-ai-usage', 'aria-label': 'Model usage' });
+  // Recorded model calls for the shown run: refreshed every few seconds while it
+  // runs, and once more when it ends so the totals are final.
+  const usageState = { runId: '', fetchedAt: 0, loading: false, settledKey: '' };
   const footerText = el('span');
   const apply = el('button', { type: 'button', class: 'btn btn--instr-primary', onclick: applyDraft }, 'Add selected to course') as HTMLButtonElement;
   const footer = el('div', { class: 'structure-ai-footer' }, footerText, apply);
@@ -143,7 +149,7 @@ export function createStructureAssistant(courseId: string, materials: Material[]
   const outlineTitle = el('h2', { text: 'Suggested outline' });
   const draftArea = el('div', { class: 'structure-ai-draft-area' },
     el('header', { class: 'structure-ai-toolbar' }, el('div', {}, outlineTitle, count)),
-    message, status, consolidation.element, repair.element, grounding, coverage, content, footer);
+    message, status, consolidation.element, repair.element, grounding, usagePanel, coverage, content, footer);
   element.append(composer, draftArea);
 
   const active = () => starting || identityPending || consolidation.busy || repair.busy || (!run && !!acceptedRunId) || run?.status === 'queued' || run?.status === 'running';
@@ -412,10 +418,36 @@ export function createStructureAssistant(courseId: string, materials: Material[]
     }
     if (result) requestAnimationFrame(() => { if (!disposed && opened) fitDraftFields(); });
     drawGrounding();
+    drawUsage(busy);
     const failedDiagnostics = failed && run?.structureDiagnostics;
     coverage.hidden = !result && !failedDiagnostics;
     const coverageKey = result ? reviewedRun : failedDiagnostics ? `${run!._id}:${run!.revision}:diagnostics` : '';
     if (coverageKey && coverage.dataset.run !== coverageKey) { coverage.dataset.run = coverageKey; drawCoverage(); }
+  }
+  function drawUsage(busy: boolean): void {
+    const shownRun = run;
+    usagePanel.hidden = !shownRun;
+    if (!shownRun) return;
+    if (usageState.runId !== shownRun._id) {
+      Object.assign(usageState, { runId: shownRun._id, fetchedAt: 0, settledKey: '' });
+      usagePanel.replaceChildren(el('summary', { text: 'Model usage · Loading…' }));
+    }
+    const terminalKey = busy ? '' : `${shownRun._id}:${shownRun.status}`;
+    const due = busy ? Date.now() - usageState.fetchedAt > 5000 : usageState.settledKey !== terminalKey;
+    if (!due || usageState.loading) return;
+    usageState.loading = true;
+    void getContentRunUsage(courseId, shownRun._id).then(snapshot => {
+      if (disposed || usageState.runId !== shownRun._id) return;
+      usageState.fetchedAt = Date.now();
+      if (terminalKey) usageState.settledKey = terminalKey;
+      const s = snapshot.summary;
+      const tokens = s.totalTokens === null ? 'tokens not reported' : `${s.totalTokens.toLocaleString()} tokens`;
+      usagePanel.replaceChildren(el('summary', { 'aria-live': 'polite', text: `Model usage · ${tokens} · ${s.observedCalls} ${s.observedCalls === 1 ? 'call' : 'calls'}${busy ? ' · updating' : ''}` }),
+        renderModelUsage(s), renderModelCalls(snapshot.calls),
+        ...((snapshot.totalCalls ?? 0) > snapshot.calls.length ? [el('p', { class: 'mu-note', text: `Showing ${snapshot.calls.length} of ${snapshot.totalCalls} calls. Totals cover every call in this run.` })] : []));
+    }).catch(() => {
+      if (!disposed && usageState.runId === shownRun._id && !usagePanel.querySelector('.model-usage')) usagePanel.replaceChildren(el('summary', { text: 'Model usage · unavailable' }));
+    }).finally(() => { usageState.loading = false; });
   }
   function drawGrounding(): void {
     const receipt = result?.coverage.outlineGrounding ?? run?.structureDiagnostics?.outlineGrounding;
@@ -521,6 +553,20 @@ export function createStructureAssistant(courseId: string, materials: Material[]
       body.append(el('p', { text: `${total(reviewModel?.totals?.mappedPassages)}/${total(reviewModel?.totals?.totalPassages)} parsed passages have outline links. These links do not establish that every taught relationship is covered.` }));
     }
     for (const warning of result?.coverage.warnings ?? []) body.append(el('p', { class: 'structure-ai-note', text: warning }));
+    const gapPass = result?.coverage.gapPass;
+    if (result && gapPass) {
+      // Remaining gaps by label: core gaps need a decision; the rest normally do not.
+      const remaining = new Set(gapPass.remainingGapIds);
+      const byId = new Map(result.evidence.map(point => [point.id, point]));
+      const group = (title: string, roles: string[], open: boolean) => {
+        const rows = gapPass.points.filter(point => roles.includes(point.role) && remaining.has(point.id));
+        if (!rows.length) return;
+        body.append(el('details', { class: 'structure-ai-evidence', ...(open ? { open: true } : {}) }, el('summary', { text: `${title} · ${rows.length}` }),
+          el('ul', {}, ...rows.map(point => el('li', { text: `${byId.get(point.id)?.objective ?? point.id} — ${byId.get(point.id)?.materialName ?? ''}${point.reason ? ` (${point.reason})` : ''}` })))));
+      };
+      group('Uncovered core learning points', ['core', 'unlabelled'], true);
+      group('Examples, overview bullets and administration (normally no objective needed)', ['example', 'overview', 'admin'], false);
+    }
     coverage.append(body);
   }
   async function applyDraft(): Promise<void> {

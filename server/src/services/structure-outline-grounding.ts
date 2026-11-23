@@ -130,7 +130,7 @@ export function selectOutlineGroundingBatch(batch: OutlineGroundingBatch, object
 
 /** Retain independently valid siblings while naming exact invalid/missing rows.
  * Foreign identities are explicit non-retryable failures, never ignored rows. */
-export function validateOutlineGroundingRows(raw: unknown, batch: OutlineGroundingBatch): {
+export function validateOutlineGroundingRows(raw: unknown, batch: OutlineGroundingBatch, options: { finalAttempt?: boolean } = {}): {
   findings: OutlineGroundingFinding[]; failures: OutlineGroundingRowFailure[];
 } {
   const failure = (id: string, reason: string): OutlineGroundingRowFailure => {
@@ -160,7 +160,20 @@ export function validateOutlineGroundingRows(raw: unknown, batch: OutlineGroundi
       if (!knownCoverage(review.coveredEvidenceIds, objective)) throw new Error('structure-grounding-review-coverage-identity');
       if (review.sourceStatus === 'supported') {
         const invalid = positiveCoverageFailure(review.coveredEvidenceIds, review.sourceIds, objective);
-        if (invalid) { failures.push({ ...failure(objective.id, invalid.reason), coverageRequirements: invalid.coverageRequirements }); continue; }
+        if (invalid && options.finalAttempt) {
+          // After its one correction, an uncited coverage claim is withdrawn
+          // rather than failing every objective in the run (measured
+          // 2026-11-23: a merged objective spanning ~20 sources could not cite
+          // them all within 16 IDs, and the whole 86-objective review failed).
+          // Only cited coverage is credited; the rest stays a visible gap. With
+          // nothing cited left, the objective is withheld as uncertain.
+          const cited = review.coveredEvidenceIds.filter(id => objective.learningPoints.some(point => point.id === id && point.sourceIds.some(source => review.sourceIds.includes(source))));
+          if (cited.length) review.coveredEvidenceIds = cited;
+          else {
+            review.sourceStatus = 'uncertain'; review.coveredEvidenceIds = [];
+            review.sourceReason = `Automatic review could not cite an original for any covered learning point. ${review.sourceReason}`.slice(0, 600);
+          }
+        } else if (invalid) { failures.push({ ...failure(objective.id, invalid.reason), coverageRequirements: invalid.coverageRequirements }); continue; }
       }
       findings.push({ ...structuredClone(objective), status: review.sourceStatus, reason: review.sourceReason,
         citedSourceIds: review.sourceIds, coveredEvidenceIds: review.sourceStatus === 'supported' ? review.coveredEvidenceIds : [],
@@ -172,6 +185,16 @@ export function validateOutlineGroundingRows(raw: unknown, batch: OutlineGroundi
     }
   }
   return { findings, failures };
+}
+
+/** The withheld finding for an objective whose review still failed after its
+ * one correction: no citation or coverage is credited, its evidence stays a
+ * visible gap, and the run continues (2026-11-23: one such objective failed a
+ * 130-objective review after 123 were done). Same shape as a model verdict. */
+export function withheldReviewFinding(objective: GroundingObjective, reason: string): OutlineGroundingFinding {
+  return { ...structuredClone(objective), status: 'uncertain',
+    reason: `Automatic review could not complete for this objective after one correction (${reason}).`.slice(0, 600),
+    citedSourceIds: [], coveredEvidenceIds: [], topicFit: 'uncertain', topicReason: 'Not assessed: the automatic review did not complete for this objective.' };
 }
 
 /** Full admission still requires every row. Partial findings are diagnostics

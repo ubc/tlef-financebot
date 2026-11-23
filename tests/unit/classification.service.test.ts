@@ -21,7 +21,7 @@ jest.mock('../../server/src/components/genai/llm', () => ({ completeJson: jest.f
 // classification/import now run on the admin-configurable `utility` step, so
 // they read platform settings; stub that seam rather than the whole DB layer.
 jest.mock('../../server/src/services/admin.service', () => ({
-  utilityStepConfig: jest.fn(async () => ({ model: 'utility-model-v1' })),
+  utilityStepConfig: jest.fn(async () => ({ model: 'utility-model-v1' })), outlineOrganizerStepConfig: jest.fn(async () => ({ model: 'utility-model-v1' })),
 }));
 jest.mock('../../server/src/services/courses.service', () => ({
   upsertCourseOutline: jest.fn(),

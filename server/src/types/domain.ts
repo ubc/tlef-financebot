@@ -157,9 +157,9 @@ export type CapabilityProfile = 'classic' | 'reasoning-tunable' | 'reasoning-fix
 export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh';
 
 /** The pipeline steps an admin can point at a model independently (PRD §2 / AD-07). */
-export const PIPELINE_STEPS = ['generator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
+export const PIPELINE_STEPS = ['generator', 'reviewer', 'masteryEvaluator', 'utility', 'outlineOrganizer'] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
-export const COURSE_MODEL_STEPS = ['generator', 'reviewer', 'utility'] as const;
+export const COURSE_MODEL_STEPS = ['generator', 'reviewer', 'utility', 'outlineOrganizer', 'masteryEvaluator'] as const;
 export type CourseModelStep = (typeof COURSE_MODEL_STEPS)[number];
 
 /**
@@ -222,7 +222,8 @@ export interface TaInvite {
 export interface Course {
   /** Durable tombstone blocks authoring during retryable permanent deletion. */
   authoringDeletionStartedAt?: Date;
-  /** Admin-owned, with its own revision independent of course authoring. */
+  /** Shared per-course model choice, edited by Admin and the course's instructors
+   * (instructors only from the built-in supported list); own revision. */
   llmModelSettings?: {
     revision: number;
     overrides: Partial<Record<CourseModelStep, Pick<StepModelConfig, 'model' | 'capabilityProfile'>>>;
@@ -424,7 +425,7 @@ export interface Question {
     };
   };
   generationPrompt?: string; // recorded custom prompt (IN-Q11)
-  regenerations?: Array<{ prompt: string; at: Date }>; // variant previews requested; content is not auto-saved (IN-Q12)
+  regenerations?: Array<{ prompt: string; at: Date; operationId?: string }>; // variant previews requested; content is not auto-saved (IN-Q12)
   internalNotes: Array<{ puid: string; text: string; at: Date }>; // teaching-team-only (§6.2)
   suggestions?: Array<{
     id: ObjectId;

@@ -4,6 +4,8 @@
 // layer: instructor guarding, body validation, enqueue + 202 shape, and the
 // preseeding read.
 import express, { type Express } from 'express';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { ObjectId } from 'mongodb';
 import type { User } from '../../server/src/types/domain';
@@ -124,6 +126,80 @@ describe('Task 10 presets and regeneration', () => {
       prompt: 'Change the scenario.',
       byPuid: 'PUID-INSTR-0001',
     });
+  });
+
+  it('streams the draft over HTTP before the final unsaved variant is available', async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    jest.mocked(regenerateQuestionVariant).mockImplementationOnce(async (_input, observer) => {
+      observer!.stage('retrieving');
+      observer!.stage('generating');
+      observer!.preview({ stem: 'Partial stem' });
+      await pending;
+      observer!.stage('reviewing');
+      return { variant: { stem: 'Finished alternative' } } as never;
+    });
+    const server = makeApp(instructor).listen(0, '127.0.0.1');
+    try {
+      await once(server, 'listening');
+      const { port } = server.address() as AddressInfo;
+      const res = await fetch(`http://127.0.0.1:${port}/api/courses/${courseId}/questions/${questionId}/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+        body: JSON.stringify({ prompt: 'Change it.' }),
+        signal: AbortSignal.timeout(3000),
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toMatch(/^text\/event-stream/);
+      expect(res.headers.get('x-accel-buffering')).toBe('no');
+      const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+      const draftFrame = 'event: preview\ndata: {"stem":"Partial stem"}\n\n';
+      let received = '';
+      while (!received.includes(draftFrame)) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error('Stream ended before the draft arrived.');
+        received += value;
+      }
+      expect(received).toBe(
+        'event: progress\ndata: {"stage":"retrieving"}\n\n'
+        + 'event: progress\ndata: {"stage":"generating"}\n\n'
+        + draftFrame,
+      );
+      finish();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        received += value;
+      }
+      expect(received).toMatch(/event: progress\ndata: \{"stage":"reviewing"\}\n\nevent: result\ndata: \{"variant":\{"stem":"Finished alternative"\}\}\n\n$/);
+    } finally {
+      finish();
+      await new Promise<void>(resolve => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
+    }
+  });
+
+  it('preserves JSON refusals before streaming and emits a terminal error after progress', async () => {
+    jest.mocked(regenerateQuestionVariant)
+      .mockRejectedValueOnce(new Error('question-not-found'))
+      .mockImplementationOnce(async (_input, observer) => {
+        observer!.stage('reviewing');
+        throw new Error('question-changed-during-regeneration');
+      });
+    const regenerate = () => request(makeApp(instructor))
+      .post(`/api/courses/${courseId}/questions/${questionId}/regenerate`)
+      .set('Accept', 'text/event-stream').send({ prompt: 'Change it.' });
+    const refusal = await regenerate();
+    expect(refusal.status).toBe(404);
+    expect(refusal.body).toEqual({ error: 'question-not-found' });
+    const failedStream = await regenerate();
+    expect(failedStream.status).toBe(200);
+    expect(failedStream.text.trim().split('\n\n')).toEqual([
+      'event: progress\ndata: {"stage":"reviewing"}',
+      'event: error\ndata: {"status":409,"error":"question-changed-during-regeneration"}',
+    ]);
   });
 
   it('rejects non-instructors and empty regeneration prompts', async () => {

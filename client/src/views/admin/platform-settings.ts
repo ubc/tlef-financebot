@@ -23,6 +23,7 @@ const STEP_LABEL: Record<PipelineStep, string> = {
   reviewer: 'Checker',
   masteryEvaluator: 'Mastery evaluator',
   utility: 'Utility',
+  outlineOrganizer: 'Outline organizer',
 };
 
 // Prose moved off the page and behind `helpTip` (2026-08-15): five steps each
@@ -40,8 +41,12 @@ const STEP_HELP: Record<PipelineStep, string> = {
     + 'mastery-evaluator model call anywhere in the pipeline today.',
   utility:
     'Everything that is not one of the three question agents: classifying uploaded material, '
-    + 'suggesting a course hierarchy, and converting imported short-answer questions. These ran on '
-    + 'the environment default with no admin control until this step existed.',
+    + 'reading materials and drafting outline sections for Course Structure, checking each outline '
+    + 'objective against its sources, and converting imported short-answer questions.',
+  outlineOrganizer:
+    'Writes the final Course Structure outline — topics and learning objectives — from the analyzed '
+    + 'materials. One call per structure run (about 20k input tokens for eight lectures), so a stronger '
+    + 'model here costs little while reading and checking stay on Utility.',
 };
 
 const TEMPERATURE_HELP =

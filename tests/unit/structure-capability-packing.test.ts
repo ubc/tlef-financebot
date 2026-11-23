@@ -185,9 +185,10 @@ describe('unchanged input/native/correction caps and legacy branch', () => {
   it('leaves the absent-selector result and original module bytes unchanged while binding the new explicit packing file', () => {
     const f = fixture(3, 0);
     expect(planCapabilityOutlineGrounding(f.themes, f.evidence, f.sections, 16000)).toEqual(planOutlineGrounding(f.themes, f.evidence, f.sections, 16000));
+    // Pins updated 2026-11-23: a final-attempt review failure withholds that objective, not the run.
     const sha = (file: string) => createHash('sha256').update(readFileSync(file)).digest('hex');
-    expect(sha('server/src/services/structure-outline-grounding.ts')).toBe('a6f9fa23f3b7b35c9f2dd52a85303953f9e4e3917c59356fdd0ef1c1e6acf366');
-    expect(sha('server/src/services/structure-outline-review.ts')).toBe('35cf0002adee090161bf33644f72f03516abc07320ecacbd05064ed76dbe9d74');
+    expect(sha('server/src/services/structure-outline-grounding.ts')).toBe('d37cc238119a47f998b714454a7266ec7b2db1ebbd9fb2bf1dfe9123e82f1b0f');
+    expect(sha('server/src/services/structure-outline-review.ts')).toBe('eb886fa3608652c391c20fd883ad43823d5d53dddd3eb79fb0c3d6409014923a');
     const packing = readFileSync('server/src/services/structure-capability-packing.ts');
     expect(packing.length).toBeGreaterThan(0);
     expect(structureOutlineReviewProtocolHash(protocol)).not.toBe(structureOutlineReviewProtocolHash());

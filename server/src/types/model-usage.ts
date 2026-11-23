@@ -53,6 +53,7 @@ export interface ModelUsageFilters {
   courseId?: string;
   runId?: string;
   operationId?: string;
+  operationIds?: string[];
   from?: string;
   until?: string;
   page?: number;
@@ -81,4 +82,11 @@ export interface ModelUsageSummary extends ModelUsageTotals {
   retryVisibility: 'disabled' | 'unknown';
   stages: Array<ModelUsageTotals & { stage: string }>;
   models: Array<ModelUsageTotals & { provider: string; model: string }>;
+  cost?: ModelCostEstimate;
+}
+
+export interface ModelCostEstimate {
+  estimatedUsd: number | null;
+  unpricedCalls: number;
+  models: Array<{ provider: string; model: string; tokens: number | null; estimatedUsd: number | null; unpricedCalls: number }>;
 }

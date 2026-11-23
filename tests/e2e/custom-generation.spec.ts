@@ -119,31 +119,26 @@ test.describe('Task 10 custom generation and regeneration', () => {
     page.on('pageerror', (error) => browserErrors.push(error.message));
 
     let generationPayload: Record<string, unknown> | undefined;
-    await page.route(`**/api/courses/${courseId}/generate`, async (route) => {
-      generationPayload = route.request().postDataJSON() as Record<string, unknown>;
-      await route.fulfill({
-        status: 202,
-        contentType: 'application/json',
-        body: JSON.stringify({ runId: '1234567890abcdef12345678' }),
-      });
+    const runId = '1234567890abcdef12345678';
+    await page.route(`**/api/courses/${courseId}/content-runs/${runId}`, route => route.fulfill({ json: {
+      _id: runId, courseId, kind: 'question-generation', status: 'queued', stage: 'queued', revision: 1,
+      input: { loId, count: 3 }, completedUnits: 0, totalUnits: 3, createdAt: new Date().toISOString(), events: [],
+    } }));
+    await page.route(`**/api/courses/${courseId}/generation-plan`, async route => {
+      generationPayload = route.request().postDataJSON();
+      await route.fulfill({ status: 202, json: { runs: [{ loId, runId }] } });
     });
 
     await page.goto(`/#/instructor/course/${courseId}/preseeding`);
-    await expect(page.getByRole('heading', { name: 'Question Bank Coverage' })).toBeVisible();
-    await page.getByRole('button', { name: 'Applied scenario' }).click();
-    const prompt = page.getByLabel(/Custom prompt/i);
-    await expect(prompt).toHaveValue(/applied business scenario/i);
-
-    await page.getByLabel('Material @mention autocomplete').fill(MATERIAL_NAME);
-    await page.getByRole('button', { name: 'Insert @mention' }).click();
-    await expect(prompt).toHaveValue(new RegExp(`@"${MATERIAL_NAME.replace('.', '\\.')}"`));
-    await page.getByRole('button', { name: 'Generate', exact: true }).click();
-    await expect(page.getByText(/Generation queued as run 12345678/i)).toBeVisible();
-    expect(generationPayload).toMatchObject({
-      loId,
-      type: 'mcq',
-      difficulty: 'medium',
-    });
+    await expect(page.getByRole('heading', { name: 'Generate questions', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Concept check', exact: true }).click();
+    const prompt = page.getByLabel('Instructions · optional');
+    await expect(prompt).toHaveValue(/conceptual understanding/i);
+    await prompt.fill(`Test conceptual understanding using @"${MATERIAL_NAME}".`);
+    await page.getByRole('button', { name: 'Medium', exact: true }).click();
+    await page.getByRole('button', { name: 'Generate 3 questions →', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Generation activity', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    expect(generationPayload).toMatchObject({ cells: [expect.objectContaining({ loId, type: 'mcq', difficulty: 'medium' })] });
     expect(String(generationPayload?.prompt)).toContain(`@"${MATERIAL_NAME}"`);
 
     await page.route(

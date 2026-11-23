@@ -11,7 +11,7 @@ const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text
 
 export interface SettingsOptions {
   detail: QuestionDetail;
-  tree: CourseTree;
+  tree: Pick<CourseTree, 'themes'>;
   /** A save or bulk action is running. */
   busy: boolean;
   /** The reader is in Edit mode: a difficulty save would make the open edit stale. */

@@ -1,8 +1,8 @@
 // Instructor Questions workspace — the merged Review Queue, Question Bank and
 // Flags page (spec docs/superpowers/specs/2026-11-09-instructor-questions-workspace-design.md).
 //
-// Layout: header (Generate more / Import / Export CSV) → release bar → status
-// tabs with counts → list (search, filters, selection, bulk actions) beside
+// Layout: header (Generate more / Import / Export CSV) → status tabs with
+// counts → list (search, filters, selection, bulk actions) beside
 // the reader. URL state: ?tab=review|approved|flags|paused|archived&q=<id>,
 // plus ?runId= (highlight a generation run) and ?flag= (a notification).
 // Student visibility comes from the server; this view only words it.
@@ -10,6 +10,9 @@ import {
   ApiError,
   getContentRun,
   getCourseTree,
+  getCourseOutline,
+  getMyCourseCapabilities,
+  type Capability,
   getQuestion,
   getQuestionWorkspace,
   listCourseFlags,
@@ -46,15 +49,18 @@ import {
   runHighlightSummary,
   TAB_LABEL,
   topicNames,
-  type ApprovedView,
   type BulkAction,
-  type VerdictFilter,
+  type QuestionsPathParams,
   type WorkspaceFilters,
 } from './questions-model.js';
+import { renderTaFlagTriage } from '../ta/flag-triage.js';
 import { createQuestionReader } from './questions-reader.js';
 
 const errorText = (error: unknown): string => error instanceof ApiError ? error.message : error instanceof Error ? error.message : String(error);
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+type FilterKey = Exclude<keyof WorkspaceFilters, 'search'>;
+const FILTER_BUTTON_ID = 'questions-filter-toggle';
+const SEARCH_INPUT_ID = 'questions-search';
 
 const TAB_FOR_STATE: Record<PublicationState, WorkspaceTab> = {
   draft: 'review',
@@ -89,14 +95,16 @@ function rich(text: string, className: string): HTMLElement {
   return node;
 }
 
-async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Promise<void> {
+async function renderQuestionsInner(outlet: HTMLElement, courseId: string, role: 'instructor' | 'ta'): Promise<void> {
   const root = el('div', { class: 'view questions-workspace' }, loadingState('Loading questions…'));
   mount(outlet, root);
-  const coursePath = `/instructor/course/${encodeURIComponent(courseId)}`;
+  const ta = role === 'ta';
+  const pathFor = (params: QuestionsPathParams) => questionsPath(courseId, params, role);
+  const coursePath = `/${role}/course/${encodeURIComponent(courseId)}`;
   const query = currentQuery();
   let tab: WorkspaceTab | null = parseTab(query.get('tab'));
   let preferredId = query.get('q') ?? '';
-  const runId = query.get('runId') ?? '';
+  const runId = ta ? '' : query.get('runId') ?? '';
   const highlightFlagId = query.get('flag') ?? undefined;
   // The reader state in the URL belongs to the question named by `q` only.
   const initialReaderState = {
@@ -106,14 +114,25 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     analyticsVersionId: query.get('analyticsVersionId') ?? undefined,
   };
 
-  let tree: CourseTree;
+  let tree: Pick<CourseTree, 'themes'>;
+  let taPermissions: Record<Capability, boolean> | undefined;
   let workspace: QuestionWorkspace;
   let highlightIds: Set<string> | null = null;
   let highlightError: string | null = null;
   try {
+    if (ta) {
+      taPermissions = await getMyCourseCapabilities(courseId);
+      if (!root.isConnected) return;
+      if (!taPermissions['question.review']) {
+        if (taPermissions['flag.triage']) renderTaFlagTriage(outlet, { id: courseId });
+        else mount(root, errorState('This course has not granted you access to review questions or student reports.'));
+        return;
+      }
+      if (tab === 'flags' && !taPermissions['flag.triage']) tab = 'review';
+    }
     const firstTab = tab ?? 'review';
     [tree, workspace] = await Promise.all([
-      getCourseTree(courseId),
+      ta ? getCourseOutline(courseId) : getCourseTree(courseId),
       getQuestionWorkspace(courseId, firstTab),
       runId
         ? getContentRun(courseId, runId).then(
@@ -125,7 +144,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
         )
         : Promise.resolve(),
       // A notification names a flag, not its question: look the question up once.
-      highlightFlagId && !preferredId
+      highlightFlagId && !preferredId && (!ta || taPermissions?.['flag.triage'])
         ? listCourseFlags(courseId).then(
           (flags) => { preferredId = flags.find((flag) => flag.id === highlightFlagId)?.questionId ?? ''; },
           () => undefined,
@@ -146,14 +165,16 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
       }
     }
   } catch (error) {
-    mount(root, errorState(errorText(error), () => void renderQuestionsInner(outlet, courseId)));
+    mount(root, errorState(errorText(error), () => void renderQuestionsInner(outlet, courseId, role)));
     return;
   }
+  if (!root.isConnected) return;
   let activeTab: WorkspaceTab = tab;
   // The Coverage Map links here with ?loId= to show one objective's questions.
   const arrivalLo = query.get('loId') ?? '';
   const arrivalTheme = tree.themes.find((theme) => (theme.los ?? []).some((lo) => lo._id === arrivalLo));
   let filters: WorkspaceFilters = arrivalTheme ? { ...EMPTY_FILTERS, themeId: arrivalTheme._id, loId: arrivalLo } : { ...EMPTY_FILTERS };
+  let filtersOpen = false;
   const selected = new Set<string>();
   let bulkBusy = false;
   let bulkMessage = '';
@@ -162,7 +183,6 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   let loadError = '';
   let narrowReading = !!preferredId;
 
-  const releaseBar = el('section', { class: 'questions-release-bar', 'aria-label': 'Release to students' });
   const tabs = el('nav', { class: 'questions-tabs', 'aria-label': 'Question status' });
   const highlight = el('div', { class: 'questions-highlight' });
   const toolbar = el('div', { class: 'questions-toolbar' });
@@ -176,6 +196,8 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   const reader = createQuestionReader({
     courseId,
     tree,
+    taPermissions,
+    shouldOfferTaDetail: () => narrowReading && activeTab !== 'flags',
     release: () => workspace.release,
     highlightFlagId,
     initialState: initialReaderState,
@@ -195,7 +217,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   const body = el('div', { class: 'gw-grid questions-body' }, listColumn, reader.root);
   /** The workspace URL for question `q`, with the reader's own state for it. */
   function readerPath(q: string | undefined): string {
-    return questionsPath(courseId, { tab: activeTab, q, runId: highlightIds ? runId : undefined, ...(q && q === reader.currentId() ? reader.urlState() : {}) });
+    return pathFor({ tab: activeTab, q, runId: highlightIds ? runId : undefined, ...(q && q === reader.currentId() ? reader.urlState() : {}) });
   }
 
   // --- Data -----------------------------------------------------------------
@@ -222,7 +244,8 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   async function switchTab(next: WorkspaceTab, selectId = ''): Promise<void> {
-    if (reader.isLocked() && !await confirmDialog({ title: 'Leave this question?', message: 'Unsaved edits or a pending decision will be lost.', confirmLabel: 'Leave' })) return;
+    if (!await reader.confirmQuestionChange()) return;
+    if (reader.isSelectionLocked()) reader.show(null);
     activeTab = next;
     selected.clear(); bulkMessage = ''; bulkError = '';
     preferredId = selectId;
@@ -234,7 +257,11 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   async function openQuestion(questionId: string): Promise<void> {
-    if (workspace.items.some((row) => row.id === questionId)) { preferredId = questionId; filters = { ...EMPTY_FILTERS }; draw(); return; }
+    if (workspace.items.some((row) => row.id === questionId)) {
+      if (!await reader.confirmQuestionChange()) return;
+      if (reader.isSelectionLocked()) reader.show(null);
+      preferredId = questionId; filters = { ...EMPTY_FILTERS }; draw(); return;
+    }
     try {
       const detail = await getQuestion(questionId);
       await switchTab(TAB_FOR_STATE[detail.state], questionId);
@@ -255,32 +282,11 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
 
   // --- Drawing --------------------------------------------------------------
 
-  function drawReleaseBar(): void {
-    const { release, counts } = workspace;
-    const released = release.themes.filter((theme) => theme.released).length;
-    const manage = el('a', { class: 'btn btn--ghost btn--sm', href: `#${coursePath}/publish?section=release` }, 'Manage releases');
-    const warning = release.hiddenApprovedCount > 0;
-    releaseBar.classList.toggle('is-warning', warning || !release.coursePublished);
-    mount(releaseBar,
-      el('div', { class: 'questions-release-bar__text' },
-        el('span', { class: 'questions-release-bar__step', text: 'Student release' }),
-        !release.coursePublished
-          ? el('p', { class: 'questions-release-bar__alert' },
-            el('strong', { text: 'The course is not published — students see no questions. ' }),
-            el('a', { href: `#${coursePath}/publish?section=publish`, text: 'Open publishing checklist →' }))
-          : false,
-        warning
-          ? el('p', { class: 'questions-release-bar__alert' }, el('strong', { text: `${plural(release.hiddenApprovedCount, 'approved question')} ${release.hiddenApprovedCount === 1 ? 'is' : 'are'} not visible to students yet.` }))
-          : counts.approved > 0 && release.coursePublished ? el('p', { text: `All ${plural(counts.approved, 'approved question')} ${counts.approved === 1 ? 'is' : 'are'} visible to students.` }) : false,
-        el('p', { class: 'muted', text: release.themes.length ? `Released ${released} of ${plural(release.themes.length, 'topic')}.` : 'No topics yet — add them in Course Structure.' })),
-      manage);
-  }
-
   function drawTabs(): void {
     const { counts } = workspace;
-    mount(tabs, ...WORKSPACE_TABS.map((value) => el('a', {
+    mount(tabs, ...WORKSPACE_TABS.filter(value => value !== 'flags' || !ta || taPermissions?.['flag.triage']).map((value) => el('a', {
       class: `questions-tab${value === activeTab ? ' is-active' : ''}${value === 'flags' && counts.flags > 0 ? ' has-attention' : ''}`,
-      href: `#${questionsPath(courseId, { tab: value })}`,
+      href: `#${pathFor({ tab: value })}`,
       'aria-current': value === activeTab ? 'page' : undefined,
       onclick: (event: Event) => { event.preventDefault(); if (value !== activeTab) void switchTab(value); },
     }, TAB_LABEL[value], el('span', { class: 'questions-tab__count', text: String(counts[value]) }))));
@@ -295,52 +301,87 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
       `Highlighting ${plural(shown, 'question')} from this generation run.${missing ? ` ${missing} already left the review list.` : ''} `,
       el('button', { class: 'link-button', type: 'button', onclick: () => {
         highlightIds = null;
-        replaceUrl(questionsPath(courseId, { tab: activeTab, q: reader.currentId() ?? undefined, ...reader.urlState() }));
+        replaceUrl(pathFor({ tab: activeTab, q: reader.currentId() ?? undefined, ...reader.urlState() }));
         draw();
       } }, 'Clear highlight')));
   }
 
-  function select(label: string, value: string, choices: Array<[string, string]>, onChange: (value: string) => void): HTMLElement {
-    const node = el('select', { class: 'input input--sm', 'aria-label': label, onchange: (e: Event) => onChange((e.target as HTMLSelectElement).value) },
-      ...choices.map(([optionValue, text]) => el('option', { value: optionValue, selected: optionValue === value }, text)));
-    return node;
+  function resetFilters(clearSearch: boolean): void {
+    filters = { ...EMPTY_FILTERS, search: clearSearch ? '' : filters.search };
+    drawToolbar(clearSearch ? SEARCH_INPUT_ID : FILTER_BUTTON_ID);
+    drawList();
   }
 
-  function drawToolbar(): void {
-    const filtersOpen = toolbar.querySelector('details')?.open;
-    const setFilter = <K extends keyof WorkspaceFilters>(key: K, value: WorkspaceFilters[K]): void => {
-      const focusLabel = document.activeElement?.getAttribute('aria-label');
+  function drawToolbar(focusId = toolbar.contains(document.activeElement) ? document.activeElement?.id : undefined): void {
+    function setFilter<K extends FilterKey>(key: K, value: WorkspaceFilters[K], focus: string): void {
       filters = { ...filters, [key]: value };
       if (key === 'themeId') filters.loId = '';
+      drawToolbar(focus);
       drawList();
-      drawToolbar();
-      if (focusLabel) toolbar.querySelector<HTMLElement>(`[aria-label="${CSS.escape(focusLabel)}"]`)?.focus();
-    };
-    const search = el('input', { class: 'input input--sm', type: 'search', 'aria-label': 'Search questions', placeholder: 'Search questions…', value: filters.search,
+    }
+    function field<K extends FilterKey>(key: K, label: string, choices: readonly (readonly [WorkspaceFilters[K], string])[], wide = false) {
+      const id = `questions-filter-${key}`;
+      const value = filters[key];
+      const selectedLabel = value !== EMPTY_FILTERS[key] ? choices.find(([option]) => option === value)?.[1] : undefined;
+      const select = el('select', { id, class: 'input input--sm', onchange: () => setFilter(key, select.value as WorkspaceFilters[K], id) },
+        ...choices.map(([option, text]) => el('option', { value: option, selected: option === value }, text)));
+      return {
+        control: el('label', { class: `questions-filter-field${wide ? ' is-wide' : ''}`, for: id },
+          el('span', { text: label }), el('span', { class: 'questions-filter-select' }, select)),
+        chip: selectedLabel ? el('button', {
+          class: 'questions-filter-chip', type: 'button', title: `${label} · ${selectedLabel}`,
+          'aria-label': `Remove ${label.toLowerCase()} filter: ${selectedLabel}`,
+          onclick: () => setFilter(key, EMPTY_FILTERS[key], FILTER_BUTTON_ID),
+        }, el('span', { class: 'questions-filter-chip__value', text: selectedLabel }), el('span', { 'aria-hidden': 'true', text: '×' })) : undefined,
+      };
+    }
+
+    const search = el('input', { id: SEARCH_INPUT_ID, class: 'input input--sm', type: 'search', 'aria-label': 'Search questions', placeholder: 'Search questions…', value: filters.search,
       oninput: (e: Event) => { filters = { ...filters, search: (e.target as HTMLInputElement).value }; drawList(); } });
     const topic = tree.themes.find((theme) => theme._id === filters.themeId);
     const loChoices = (topic ? topic.los ?? [] : tree.themes.flatMap((theme) => theme.los ?? [])).map((lo): [string, string] => [lo._id, lo.name]);
-    mount(toolbar,
-      search,
-      el('details', { class: 'questions-toolbar__advanced', open: filtersOpen ?? hasActiveFilters({ ...filters, search: '' }) },
-      el('summary', {}, 'Filters',
-        hasActiveFilters({ ...filters, search: '' }) ? el('span', { class: 'questions-toolbar__applied', text: 'Applied' }) : false),
-      el('div', { class: 'questions-toolbar__filters' },
-        activeTab === 'approved'
-          ? select('Student visibility', filters.approvedView, [['all', 'All approved'], ['visible', 'Visible to students'], ['waiting', 'Waiting for release']], (v) => setFilter('approvedView', v as ApprovedView))
-          : false,
-        select('Topic', filters.themeId, [['', 'All topics'], ...tree.themes.map((theme): [string, string] => [theme._id, theme.name])], (v) => setFilter('themeId', v)),
-        select('Learning objective', filters.loId, [['', 'All LOs'], ...loChoices], (v) => setFilter('loId', v)),
-        select('Type', filters.type, [['', 'All types'], ['mcq', TYPE_LABEL.mcq], ['true-false', TYPE_LABEL['true-false']]], (v) => setFilter('type', v as WorkspaceFilters['type'])),
-        select('Difficulty', filters.difficulty, [['', 'All difficulties'], ['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']], (v) => setFilter('difficulty', v as WorkspaceFilters['difficulty'])),
-        select('AI verdict', filters.verdict, [['', 'Any AI verdict'], ['pass', 'AI pass'], ['flag', 'AI flag'], ['reject', 'AI reject'], ['none', 'No AI check']], (v) => setFilter('verdict', v as VerdictFilter)),
-        el('button', { class: 'link-button', type: 'button', onclick: () => { filters = { ...EMPTY_FILTERS }; drawToolbar(); drawList(); } }, 'Clear filters'))));
+    const fields = [
+      field('themeId', 'Topic', [['', 'All topics'], ...tree.themes.map((theme): [string, string] => [theme._id, theme.name])], true),
+      field('loId', 'Learning objective', [['', 'All objectives'], ...loChoices], true),
+      field('type', 'Type', [['', 'Any type'], ['mcq', TYPE_LABEL.mcq], ['true-false', TYPE_LABEL['true-false']]]),
+      field('difficulty', 'Difficulty', [['', 'Any difficulty'], ['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']]),
+      field('verdict', 'AI verdict', [['', 'Any verdict'], ['pass', 'AI pass'], ['flag', 'AI flag'], ['reject', 'AI reject'], ['none', 'No AI check']]),
+      ...(activeTab === 'approved' ? [field('approvedView', 'Student visibility', [['all', 'All approved'], ['visible', 'Visible'], ['waiting', 'Not visible']])] : []),
+    ];
+    const chips = fields.flatMap(({ chip }) => chip ? [chip] : []);
+    const panel = el('div', { id: 'questions-filter-panel', class: 'questions-toolbar__filters', role: 'group', 'aria-label': 'Question filters', hidden: !filtersOpen },
+      ...fields.map(({ control }) => control));
+    const toggle = el('button', {
+      id: FILTER_BUTTON_ID, class: 'questions-filter-toggle', type: 'button',
+      'aria-label': 'Filters', 'aria-expanded': String(filtersOpen), 'aria-controls': panel.id,
+      'aria-describedby': chips.length ? 'questions-filter-count' : undefined,
+      onclick: () => {
+        filtersOpen = !filtersOpen;
+        panel.hidden = !filtersOpen;
+        toggle.setAttribute('aria-expanded', String(filtersOpen));
+      },
+    }, el('span', { class: 'questions-filter-icon', 'aria-hidden': 'true' }, el('i'), el('i')),
+    el('span', { class: 'questions-filter-toggle__label', text: 'Filters' }),
+    chips.length ? el('span', { class: 'questions-filter-count', 'aria-hidden': 'true', text: String(chips.length) }) : false);
+
+    mount(toolbar, el('div', { class: 'questions-toolbar__bar' },
+      el('div', { class: 'questions-toolbar__search' }, el('span', { class: 'questions-search-icon', 'aria-hidden': 'true' }), search), toggle),
+    chips.length ? el('div', { class: 'questions-filter-chips' },
+      el('span', { id: 'questions-filter-count', class: 'sr-only', text: `${plural(chips.length, 'active filter')}` }),
+      ...chips, el('button', { class: 'questions-filter-clear', type: 'button', 'aria-label': 'Clear filters', onclick: () => resetFilters(false) }, 'Clear')) : false,
+    panel);
+    if (focusId) toolbar.querySelector<HTMLElement>(`#${CSS.escape(focusId)}`)?.focus();
   }
 
   async function runBulkAction(action: BulkAction): Promise<void> {
-    if (bulkBusy || reader.isLocked()) return;
+    if (bulkBusy || reader.isSelectionLocked()) return;
     const rows = workspace.items.filter((row) => selected.has(row.id));
     if (!rows.length) return;
+    if (rows.some((row) => reader.comparisonPending(row.id))) {
+      bulkError = 'Finish comparing the selected questions before changing their status.';
+      drawBulk();
+      return;
+    }
     let reason: string | undefined;
     if (action.askReason) {
       const value = await textPromptDialog({
@@ -367,7 +408,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   }
 
   function drawBulk(): void {
-    const actions = bulkActionsFor(activeTab);
+    const actions = ta ? [] : bulkActionsFor(activeTab);
     bulkBar.hidden = selected.size === 0 && !bulkMessage && !bulkError;
     mount(bulkBar,
       selected.size ? el('strong', { text: `${selected.size} selected` }) : false,
@@ -391,7 +432,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     return el('li', { class: `questions-row${current ? ' is-current' : ''}${highlighted ? ' is-highlighted' : ''}${selected.has(row.id) ? ' is-selected' : ''}`, 'data-question-id': row.id },
       checkbox,
       el('button', { type: 'button', class: 'questions-row__open', 'aria-current': current ? 'true' : 'false', disabled: bulkBusy,
-        onclick: () => selectRow(row.id, true) },
+        onclick: () => { void selectRow(row); } },
       el('span', { class: 'questions-row__meta' },
         `${row.current.difficulty} · ${TYPE_LABEL[row.current.type]}`,
         highlighted ? el('b', { class: 'questions-row__new', text: 'New' }) : false),
@@ -399,13 +440,13 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
       el('span', { class: 'questions-row__tags' },
         el('span', { class: 'questions-row__lo', text: objectives[0] ?? topicNames(tree, row.themeIds)[0] ?? 'No LO assigned', title: objectives.join(' · ') }),
         row.agentVerdict ? el('span', { class: `questions-row__verdict is-${row.agentVerdict}`, text: VERDICT_LABEL[row.agentVerdict] }) : false,
-        row.openFlagCount ? el('span', { class: 'questions-row__flags', text: `⚑ ${row.openFlagCount}` }) : false,
+        row.openFlagCount && (!ta || taPermissions?.['flag.triage']) ? el('span', { class: 'questions-row__flags', text: `⚑ ${row.openFlagCount}` }) : false,
         row.state === 'approved' ? el('span', { class: `questions-row__visibility${row.studentVisible ? ' is-visible' : ''}`, text: row.studentVisible ? 'Visible' : 'Not visible' }) : false)));
   }
 
   function drawListHead(): void {
     const shown = visibleRows();
-    const selectable = bulkActionsFor(activeTab).length > 0;
+    const selectable = !ta && bulkActionsFor(activeTab).length > 0;
     const allChecked = selectable && shown.length > 0 && shown.every((row) => selected.has(row.id));
     mount(listHead,
       selectable && shown.length
@@ -420,30 +461,33 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     if (shown.length) return;
     const filtered = workspace.items.length > 0;
     const [title, description] = filtered ? ['No matching questions', 'Try another search or clear your filters.'] : EMPTY_COPY[activeTab];
+    const hasSearch = filters.search.trim() !== '';
+    const hasFilters = hasActiveFilters({ ...filters, search: '' });
     const action = filtered
-      ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => { filters = { ...EMPTY_FILTERS }; drawToolbar(); drawList(); } }, 'Clear filters')
+      ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => resetFilters(hasSearch) },
+        hasSearch ? hasFilters ? 'Clear search and filters' : 'Clear search' : 'Reset filters')
       : activeTab === 'review'
-        ? workspace.counts.approved ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void switchTab('approved') }, 'See approved questions') : el('a', { class: 'btn btn--instr-primary btn--sm', href: `#${coursePath}/preseeding`, text: 'Generate questions' })
+        ? workspace.counts.approved ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void switchTab('approved') }, 'See approved questions') : !ta && el('a', { class: 'btn btn--instr-primary btn--sm', href: `#${coursePath}/preseeding`, text: 'Generate questions' })
         : activeTab === 'approved'
-          ? workspace.counts.review ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void switchTab('review') }, `Review ${plural(workspace.counts.review, 'question')}`) : el('a', { class: 'btn btn--instr-primary btn--sm', href: `#${coursePath}/preseeding`, text: 'Generate questions' })
+          ? workspace.counts.review ? el('button', { class: 'btn btn--instr-primary btn--sm', type: 'button', onclick: () => void switchTab('review') }, `Review ${plural(workspace.counts.review, 'question')}`) : !ta && el('a', { class: 'btn btn--instr-primary btn--sm', href: `#${coursePath}/preseeding`, text: 'Generate questions' })
           : false;
     mount(empty, el('h2', { text: title }), el('p', { text: description }), action);
   }
 
-  function selectRow(id: string, fromClick = false): void {
-    preferredId = id;
-    replaceUrl(questionsPath(courseId, { tab: activeTab, q: id, runId: highlightIds ? runId : undefined }));
-    const row = workspace.items.find((item) => item.id === id) ?? null;
-    if (fromClick) { narrowReading = true; body.classList.add('is-reading'); }
-    drawList();
+  async function selectRow(row: WorkspaceRow): Promise<void> {
+    if (row.id !== reader.currentId() && !await reader.confirmQuestionChange()) return;
+    preferredId = row.id;
+    narrowReading = true;
     reader.show(row);
+    replaceUrl(readerPath(row.id));
+    drawList();
   }
 
   function drawList(): void {
     const shown = visibleRows();
     const active = shown.find((row) => row.id === preferredId) ?? shown[0];
     const activeId = active?.id ?? '';
-    const selectable = bulkActionsFor(activeTab).length > 0;
+    const selectable = !ta && bulkActionsFor(activeTab).length > 0;
     const scroll = listColumn.scrollTop;
     mount(list, ...shown.map((row, index) => rowNode(row, index, activeId, selectable)));
     drawListHead();
@@ -451,7 +495,7 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
     drawEmpty(shown);
     listColumn.scrollTop = scroll;
     body.classList.toggle('is-empty', shown.length === 0);
-    if (!reader.isLocked()) {
+    if (!reader.isSelectionLocked()) {
       reader.show(active ?? null);
       if (activeId && activeId !== preferredId) {
         preferredId = activeId;
@@ -468,14 +512,27 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
       notice ? el('p', { class: 'questions-notice', role: 'status' }, el('span', { text: notice }), el('button', { class: 'link-button', type: 'button', onclick: () => { notice = ''; drawMessages(); } }, 'Dismiss')) : false);
   }
 
+  let offeredTaTutorial: string | undefined;
+  function offerTaTutorial(): void {
+    if (!ta) return;
+    const id = activeTab === 'flags' ? 'ta-flags' : 'ta-review';
+    if (offeredTaTutorial === id) return;
+    offeredTaTutorial = id;
+    if (id === 'ta-flags') {
+      attachTutorial(root, id, { 'ta-flags-context': '.questions-header', 'ta-flags-items': '.questions-list' });
+    } else if (!query.get('q')) {
+      attachTutorial(root, id, { 'ta-review-context': '.questions-header', 'ta-review-items': '.questions-list' });
+    }
+  }
+
   function draw(): void {
-    drawReleaseBar();
     drawTabs();
     drawHighlight();
     drawToolbar();
     drawMessages();
     drawList();
     replaceUrl(readerPath(preferredId || undefined));
+    offerTaTutorial();
   }
 
   async function exportCsv(): Promise<void> {
@@ -490,17 +547,16 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
 
   const header = el('header', { class: 'gw-header questions-header' },
     el('div', {}, el('h1', { text: 'Questions' }),
-      el('p', { text: 'Review, approve and release your course’s practice questions.' })),
-    el('div', { class: 'questions-header__actions' },
+      el('p', { text: ta ? 'Review practice questions and share feedback with your teaching team.' : 'Review, edit and approve your course’s practice questions.' })),
+    !ta && el('div', { class: 'questions-header__actions' },
     el('a', { class: 'btn btn--instr-primary btn--sm', href: `#${coursePath}/preseeding`, text: 'Generate more' }),
     el('a', { class: 'btn btn--ghost btn--sm', href: `#${coursePath}/import`, text: 'Import' }),
     el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => void exportCsv() }, 'Export CSV')));
 
-  mount(root, header, releaseBar, tabs, highlight, messages, body);
+  mount(root, header, tabs, highlight, messages, body);
   draw();
-  attachTutorial(root, 'instructor-questions', {
+  if (!ta) attachTutorial(root, 'instructor-questions', {
     'questions-tabs': '.questions-tabs',
-    'questions-release': '.questions-release-bar',
     'questions-reader': '.questions-reader',
   });
 
@@ -514,8 +570,8 @@ async function renderQuestionsInner(outlet: HTMLElement, courseId: string): Prom
   observer.observe(outlet, { childList: true });
 }
 
-export function renderQuestions(outlet: HTMLElement, params: RouteParams): void {
-  void renderQuestionsInner(outlet, params.id);
+export function renderQuestions(outlet: HTMLElement, params: RouteParams, role: 'instructor' | 'ta' = 'instructor'): void {
+  void renderQuestionsInner(outlet, params.id, role);
 }
 
 /** `/queue`, `/bank`, `/flags` and the old question pages (`/bank/:questionId`,

@@ -242,7 +242,7 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
   {
     "id": "instructor-questions",
     "role": "instructor",
-    "label": "Questions: review and release",
+    "label": "Questions: review and approval",
     "path": "questions",
     "steps": [
       {
@@ -254,11 +254,6 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
         "selector": "[data-tutorial=\"questions-reader\"]",
         "title": "Decide with the evidence",
         "body": "Read the question, the AI check and its sources, then approve, reject or edit. Approval is always a deliberate instructor decision; TA review does not approve questions."
-      },
-      {
-        "selector": "[data-tutorial=\"questions-release\"]",
-        "title": "Release by Topic",
-        "body": "Approved questions reach students only once the course is published and every Topic they are tagged to is released. This bar tells you when approved questions are still hidden."
       }
     ]
   },
@@ -466,14 +461,14 @@ export const TUTORIAL_DEFINITIONS: readonly TutorialDefinition[] = [
       {
         "selector": "[data-tutorial=\"ta-course-list\"]",
         "title": "Open the assigned workspace",
-        "body": "Each card opens that course’s Review Queue. Available actions still follow the permissions set by its Instructor."
+        "body": "Each card opens that course’s Questions workspace. Available actions still follow the permissions set by its Instructor."
       }
     ]
   },
   {
     "id": "ta-review",
     "role": "ta",
-    "label": "Your review queue",
+    "label": "Review questions",
     "path": "review",
     "steps": [
       {

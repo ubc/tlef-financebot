@@ -44,7 +44,7 @@ function formatIndexRanges(sorted: number[]): string {
  * with no assignment are skipped; a theme-only assignment (no `loId`) shows
  * as just "Topic N". Multiple Topics join with "; ".
  */
-export function assignmentSummary(material: Material, tree: CourseTree): string {
+export function assignmentSummary(material: Material, tree: Pick<CourseTree, 'themes'>): string {
   if (!material.assignments.length) return 'Unassigned';
 
   const parts: string[] = [];

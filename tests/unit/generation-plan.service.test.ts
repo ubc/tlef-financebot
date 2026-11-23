@@ -18,7 +18,7 @@ import {
 } from '../../server/src/components/mongodb/collections';
 import { enqueueGenerationRun } from '../../server/src/services/generation.service';
 import {
-  autoGenerationPlan, enqueueGenerationPlan, splitByKind, TIER_TARGETS,
+  autoGenerationPlan, enqueueGenerationPlan, PLAN_MAX_QUESTIONS, splitByKind, TIER_TARGETS,
 } from '../../server/src/services/generation-plan.service';
 import { inferLoKind } from '../../server/src/services/courses.service';
 
@@ -125,6 +125,18 @@ describe('enqueueGenerationPlan', () => {
       expect.objectContaining({ loId: loB, error: 'generation-no-assigned-materials' }),
       expect.objectContaining({ loId: loB, difficulty: 'medium', error: 'generation-plan-invalid-count' }),
     ]);
+  });
+
+  it('accepts a 200-question batch of one-question cells and refuses anything larger before enqueueing', async () => {
+    jest.mocked(enqueueGenerationRun).mockReset().mockResolvedValue(new ObjectId());
+    const one = () => ({ loId: new ObjectId(), difficulty: 'easy' as const, kind: 'conceptual' as const, count: 1 });
+    expect(PLAN_MAX_QUESTIONS).toBe(200);
+    await expect(enqueueGenerationPlan(courseId, Array.from({ length: 200 }, one), 'PUID-INSTR')).resolves.toMatchObject({ runs: expect.any(Array) });
+    expect(enqueueGenerationRun).toHaveBeenCalledTimes(200);
+    jest.mocked(enqueueGenerationRun).mockClear();
+    await expect(enqueueGenerationPlan(courseId, Array.from({ length: 201 }, one), 'PUID-INSTR')).rejects.toThrow('generation-plan-too-large');
+    await expect(enqueueGenerationPlan(courseId, Array.from({ length: 11 }, () => ({ ...one(), count: 20 })), 'PUID-INSTR')).rejects.toThrow('generation-plan-too-large');
+    expect(enqueueGenerationRun).not.toHaveBeenCalled();
   });
 
   it('passes a combination cell\'s secondary objectives through to the run, and echoes them in the result', async () => {

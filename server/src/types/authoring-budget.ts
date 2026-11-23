@@ -10,6 +10,9 @@ export type AuthoringBudgetAccounting = 'conservative-reservations-v1' | 'report
 export interface AuthoringBudgetOptions {
   /** Explicit experiment only. Failed/incomplete sends retain reservations. */
   accounting?: AuthoringBudgetAccounting;
+  /** Replaces AUTHORING_MAX_ESTIMATED_TOKENS as the upper clamp for this
+   * budget only (structure generation sizes it to the corpus). */
+  maxEstimatedTokensCeiling?: number;
 }
 export interface AuthoringLogicalReceipt {
   generatorAttempts: number;

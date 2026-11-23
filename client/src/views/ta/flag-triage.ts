@@ -84,7 +84,7 @@ async function escalateGroup(
   let escalated = 0;
   for (const flag of targets) {
     try {
-      await escalateTaFlag(flag.id, recommendation, note);
+      Object.assign(flag, await escalateTaFlag(flag.id, recommendation, note));
       escalated++;
     } catch (error) {
       const message = error instanceof ApiError ? error.message : (error as Error).message;
@@ -97,6 +97,50 @@ async function escalateGroup(
     }
   }
   return { ok: true };
+}
+
+export function taEscalationForm(group: FlagGroup, onSent: () => Promise<void>): HTMLElement | false {
+  if (!group.flags.some(flag => flag.state === 'open')) return false;
+  const idBase = `flag-${group.questionVersionId}`;
+  const recommendationId = `${idBase}-recommendation`;
+  const noteId = `${idBase}-note`;
+  const recommendation = el(
+    'select',
+    { class: 'input', id: recommendationId },
+    el('option', { value: 'correct', text: RECOMMENDATION_LABEL.correct }),
+    el('option', { value: 'archive', text: RECOMMENDATION_LABEL.archive }),
+    el('option', { value: 'clear', text: RECOMMENDATION_LABEL.clear }),
+  ) as HTMLSelectElement;
+  const note = el('textarea', {
+    class: 'input input--area',
+    id: noteId,
+    rows: '2',
+    placeholder: 'Recommendation note (optional)',
+  }) as HTMLTextAreaElement;
+  const status = el('p', { class: 'flag-row__reason', 'aria-live': 'polite' });
+
+  return el(
+    'div',
+    { class: 'flag-row__actions flag-row__actions--stack' },
+    fieldLabel('Recommendation', recommendationId),
+    recommendation,
+    fieldLabel('Note (optional)', noteId),
+    note,
+    el('button', {
+      class: 'btn btn--instr-primary btn--sm',
+      type: 'button',
+      text: 'Escalate with recommendation',
+      onclick: async () => {
+        const result = await escalateGroup(group, recommendation.value as Recommendation, note.value);
+        if (!result.ok) {
+          status.textContent = result.error ?? 'Failed to escalate.';
+          return;
+        }
+        await onSent();
+      },
+    }),
+    status,
+  );
 }
 
 /** Most-recent reason (or "No reason given") + its date, plus "(and N more)"
@@ -207,62 +251,7 @@ async function renderInner(outlet: HTMLElement, courseId: string, highlight: Hig
 
     const topicLo = group.question ? topicLoLabel(outline, group.question.loIds, group.question.themeIds) : '—';
 
-    // Review finding 1(b): gate the form on whether the group has a flag
-    // `escalateGroup` can actually act on, NOT on `latestEscalation(group)`
-    // (whether a recommendation already exists). Those used to be treated as
-    // equivalent, but a proactive escalation (`proactivelyEscalateQuestion`
-    // in tas.service.ts) creates a flag with `state: 'escalated'` and no
-    // `taRecommendation` — `latestEscalation` returns null for it, so the old
-    // `!escalation` gate rendered a live form over a group with zero `state
-    // === 'open'` flags. `escalateGroup` would then compute an empty targets
-    // list and silently discard whatever the TA entered. Checking for an
-    // open flag directly keeps the form gated to groups it can act on;
-    // `escalationSummary` above covers the read-only cases (recommendation
-    // text, or "escalated, no recommendation yet").
-    const hasOpenFlag = group.flags.some((flag) => flag.state === 'open');
-    let actionsCell: HTMLElement | false = false;
-    if (hasOpenFlag) {
-      const idBase = `flag-${group.questionVersionId}`;
-      const recommendationId = `${idBase}-recommendation`;
-      const noteId = `${idBase}-note`;
-      const recommendation = el(
-        'select',
-        { class: 'input', id: recommendationId },
-        el('option', { value: 'correct', text: RECOMMENDATION_LABEL.correct }),
-        el('option', { value: 'archive', text: RECOMMENDATION_LABEL.archive }),
-        el('option', { value: 'clear', text: RECOMMENDATION_LABEL.clear }),
-      ) as HTMLSelectElement;
-      const note = el('textarea', {
-        class: 'input input--area',
-        id: noteId,
-        rows: '2',
-        placeholder: 'Recommendation note (optional)',
-      }) as HTMLTextAreaElement;
-      const status = el('p', { class: 'flag-row__reason', 'aria-live': 'polite' });
-
-      actionsCell = el(
-        'div',
-        { class: 'flag-row__actions flag-row__actions--stack' },
-        fieldLabel('Recommendation', recommendationId),
-        recommendation,
-        fieldLabel('Note (optional)', noteId),
-        note,
-        el('button', {
-          class: 'btn btn--instr-primary btn--sm',
-          type: 'button',
-          text: 'Escalate with recommendation',
-          onclick: async () => {
-            const result = await escalateGroup(group, recommendation.value as Recommendation, note.value);
-            if (!result.ok) {
-              status.textContent = result.error ?? 'Failed to escalate.';
-              return;
-            }
-            await renderInner(outlet, courseId, highlight);
-          },
-        }),
-        status,
-      );
-    }
+    const actionsCell = taEscalationForm(group, () => renderInner(outlet, courseId, highlight));
 
     const row = el(
       'div',
@@ -324,7 +313,9 @@ async function renderInner(outlet: HTMLElement, courseId: string, highlight: Hig
         el('small', { text: `${openFlags(group).length} reports · ${group.flags.some(flag => flag.state === 'open') ? 'Needs triage' : 'Escalated'}` })))),
       el('article', { class: 'flags-detail' }, cached.get(active)!)));
   }
-  body.replaceChildren(pageHeader('Flags', 'Review student reports and send recommendations to your instructor.'),
+  body.replaceChildren(pageHeader('Questions', 'Review student reports and send recommendations to your instructor.'),
+    el('nav', { class: 'questions-tabs', 'aria-label': 'Question status' },
+      el('span', { class: 'questions-tab is-active', 'aria-current': 'page', text: 'Student flags' })),
     el('p', { class: 'flags-counts', text: `${flagCount} active reports · ${groups.length} questions` }),
     ...(groups.length ? [tabs, el('div', { class: 'flags-search' }, search)] : []), results);
   draw();

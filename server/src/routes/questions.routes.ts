@@ -3,7 +3,7 @@ import { ObjectId } from 'mongodb';
 import type { WithId } from 'mongodb';
 import { z } from 'zod';
 import { ensureApiAuthenticated, ensureCapability } from '../components/auth';
-import { NO_COURSE_ACCESS_BODY } from '../components/auth/course-guards';
+import { ensureCourseInstructor, NO_COURSE_ACCESS_BODY } from '../components/auth/course-guards';
 import { validate } from '../middleware/validate';
 import {
   browseBank,
@@ -22,6 +22,7 @@ import {
 } from '../services/questions.service';
 import { refreshQuestionSimilarity, rebuildCourseSimilarity } from '../services/question-similarity.service';
 import { isContentReady, loadQuestionWorkspace, WORKSPACE_TABS } from '../services/question-workspace.service';
+import { questionGenerationUsage } from '../services/question-generation-usage.service';
 import {
   resolveParamValues,
   substituteParams,
@@ -480,6 +481,15 @@ questionsRouter.get(
   },
 );
 
+questionsRouter.get(
+  '/questions/:questionId/generation-usage',
+  validate({ params: questionIdParams }),
+  ensureApiAuthenticated(),
+  stashCourseIdFromQuestion(),
+  ensureCourseInstructor(),
+  async (req, res) => { res.json(await questionGenerationUsage(new ObjectId(String(req.params.questionId)))); },
+);
+
 /** PATCH /api/questions/:questionId { stem?, options?, difficulty?, loIds?, themeIds? } -> new/unchanged QuestionVersion. Instructor-only. (IN-Q03) */
 questionsRouter.patch(
   '/questions/:questionId',
@@ -608,7 +618,7 @@ questionsRouter.patch(
 );
 
 /**
- * GET /api/questions/:questionId/sample -> `{ seed, stem, options: [{key, text}],
+ * GET /api/questions/:questionId/sample -> `{ versionId, seed, stem, options: [{key, text}],
  * parameterized }`. Instructor-only, read-only, persists nothing.
  *
  * Renders ONE sample draw of the SAVED version so an instructor reviewing a
@@ -637,7 +647,7 @@ questionsRouter.get(
     // left raw ON PURPOSE — its job is to show real draw behaviour, collisions
     // included, so an instructor can see what the verifier is complaining
     // about.)
-    res.json(await drawQuestionSample(current));
+    res.json({ versionId: current._id, ...await drawQuestionSample(current) });
   },
 );
 

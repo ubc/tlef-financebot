@@ -6,8 +6,10 @@ jest.mock('../../server/src/services/admin-diagnostics.service', () => ({
   listAdminModelUsage: jest.fn(),
 }));
 jest.mock('../../server/src/services/admin-workflow.service', () => ({ listWorkflows: jest.fn() }));
+jest.mock('../../server/src/services/admin-ai-usage.service', () => ({ getAdminAiUsage: jest.fn() }));
 import * as service from '../../server/src/services/admin-diagnostics.service';
 import { listWorkflows } from '../../server/src/services/admin-workflow.service';
+import { getAdminAiUsage } from '../../server/src/services/admin-ai-usage.service';
 import { adminDiagnosticsRouter } from '../../server/src/routes/admin-diagnostics.routes';
 const id = '123456789012345678901234';
 function app(role?: 'admin' | 'instructor') {
@@ -20,9 +22,20 @@ function app(role?: 'admin' | 'instructor') {
   app.use('/api', adminDiagnosticsRouter);
   return app;
 }
-it.each(['/admin/operations', '/admin/model-usage', '/admin/workflows', '/admin/diagnostic-runs', '/admin/audit-history', '/admin/all-questions', `/admin/all-questions/${id}`, `/admin/all-questions/${id}/reproduce`, `/admin/diagnostic-runs/${id}`, '/admin/operations/550e8400-e29b-41d4-a716-446655440000'])('denies non-Admins on %s', async path => {
+it.each(['/admin/operations', '/admin/model-usage', '/admin/ai-usage', '/admin/workflows', '/admin/diagnostic-runs', '/admin/audit-history', '/admin/all-questions', `/admin/all-questions/${id}`, `/admin/all-questions/${id}/reproduce`, `/admin/diagnostic-runs/${id}`, '/admin/operations/550e8400-e29b-41d4-a716-446655440000'])('denies non-Admins on %s', async path => {
   expect((await request(app()).get(`/api${path}`)).status).toBe(401);
   expect((await request(app('instructor')).get(`/api${path}`)).status).toBe(403);
+});
+it('validates the dashboard period and serves it privately to Admins', async () => {
+  const admin = app('admin');
+  expect((await request(admin).get('/api/admin/ai-usage?from=bad')).status).toBe(400);
+  expect((await request(admin).get('/api/admin/ai-usage?from=2026-11-12T00:00:00Z&until=2026-11-11T00:00:00Z')).status).toBe(400);
+  expect(getAdminAiUsage).not.toHaveBeenCalled();
+  jest.mocked(getAdminAiUsage).mockResolvedValue({ courses: [] } as never);
+  const response = await request(admin).get('/api/admin/ai-usage?from=2026-11-01T00:00:00Z');
+  expect(response.status).toBe(200);
+  expect(response.headers['cache-control']).toBe('private, no-store');
+  expect(getAdminAiUsage).toHaveBeenCalledWith({ from: '2026-11-01T00:00:00Z' });
 });
 it('validates usage and workflow scopes before reading their records', async () => {
   for (const query of ['page=0', 'limit=101', 'courseId=wrong', 'runId=wrong', 'operationId=wrong', 'from=2026-10-03T00:00:00Z&until=2026-10-02T00:00:00Z']) {

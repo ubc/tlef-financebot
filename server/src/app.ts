@@ -38,6 +38,7 @@ import { materialsRouter } from './routes/materials.routes';
 import { generationRouter } from './routes/generation.routes';
 import { generationBlueprintsRouter } from './routes/generation-blueprints.routes';
 import { contentRunsRouter } from './routes/content-runs.routes';
+import { courseModelsRouter } from './routes/course-models.routes';
 import { contentMapRouter } from './routes/content-map.routes';
 import { previewRouter } from './routes/preview.routes';
 import { importRouter } from './routes/import.routes';
@@ -107,6 +108,7 @@ export function createApp(): Express {
   app.use('/api', generationRouter); // Three-agent question generation pipeline + pre-seeding (§9.1, IN-Q10).
   app.use('/api', generationBlueprintsRouter); // Reusable generation blueprints + exact run provenance (P2-I2).
   app.use('/api', contentRunsRouter); // Durable material/generation run history + live course progress (Phase 2 P2-0).
+  app.use('/api', courseModelsRouter); // Course instructors choose supported models per AI step.
   app.use('/api', contentMapRouter); // Instructor content coverage + material-kind map (P2-I5).
   app.use('/api', importRouter); // CSV/JSON/QTI question import preview + Draft-only commit (IN-Q01).
   app.use('/api', clientDiagnosticsRouter);

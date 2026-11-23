@@ -1,5 +1,5 @@
 import {
-  admitGroundedOutline, selectOutlineGroundingBatch, validateOutlineGroundingRows,
+  admitGroundedOutline, selectOutlineGroundingBatch, validateOutlineGroundingRows, withheldReviewFinding,
   type OutlineGroundingBatch, type OutlineGroundingRowFailure,
 } from './structure-outline-grounding';
 import type { GroundingObjective, OutlineGroundingFinding, StructureResult } from '../types/structure';
@@ -130,7 +130,15 @@ export async function reviewStructureProposal(input: StructureProposalReviewInpu
       progress.unresolvedDispatchIds = [...ids];
       const raw = await input.complete(pending.prompt + correction, item, attempt);
       await input.assertCurrent();
-      const checked = validateOutlineGroundingRows(raw, pending);
+      const checked = validateOutlineGroundingRows(raw, pending, { finalAttempt: attempt === 1 });
+      if (attempt === 1) {
+        // A requested objective that still fails after its correction is
+        // withheld instead of failing every objective in the run. Rows naming
+        // objectives outside this request remain fatal identity failures.
+        const failedIds = [...new Set(checked.failures.map(row => row.id))].filter(id => ids.includes(id) && !checked.findings.some(row => row.id === id));
+        for (const id of failedIds) checked.findings.push(withheldReviewFinding(pending.objectives.find(row => row.id === id)!, checked.failures.find(row => row.id === id)!.reason));
+        checked.failures = checked.failures.filter(row => !failedIds.includes(row.id));
+      }
       await input.afterValidation({ ids: [...ids], attempt, item, raw,
         findings: structuredClone(checked.findings), failures: structuredClone(checked.failures) });
       progress.unresolvedDispatchIds = [];

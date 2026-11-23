@@ -78,9 +78,10 @@ const SUGGESTION_STATUS_LABEL: Record<QuestionSuggestion['status'], string> = {
  * null otherwise. Without this gate, re-clicking files duplicate no-op
  * suggestions the instructor then has to triage one by one (which is what the
  * old row-level "Suggest edit" button did). */
-function suggestPanel(
+export function suggestPanel(
   detail: QuestionDetail,
-  onSubmitted: () => void,
+  onSubmitted: (suggestion: QuestionSuggestion) => void,
+  showHeading = true,
 ): HTMLElement {
   const original = { stem: detail.current.stem, difficulty: detail.current.difficulty };
   const status = el('span', { 'aria-live': 'polite' });
@@ -120,9 +121,9 @@ function suggestPanel(
     const patch = buildSuggestionPatch(original, draft());
     if (!patch) return;
     try {
-      await suggestTaQuestionEdit(detail.id, patch);
+      const suggestion = await suggestTaQuestionEdit(detail.id, patch);
       status.textContent = 'Suggestion sent to the instructor.';
-      onSubmitted();
+      onSubmitted(suggestion);
     } catch (error) {
       status.textContent = error instanceof ApiError ? error.message : (error as Error).message;
     }
@@ -132,8 +133,8 @@ function suggestPanel(
   difficultyInput.addEventListener('change', syncSubmitState);
   syncSubmitState();
 
-  return el('section', { class: 'card stack' },
-    el('h2', { class: 'section-title', text: 'Suggest an edit' }),
+  return el('section', { class: showHeading ? 'card stack' : 'stack stack--sm' },
+    showHeading && el('h2', { class: 'section-title', text: 'Suggest an edit' }),
     fieldLabel('Stem', stemInput.id),
     stemInput,
     fieldLabel('Difficulty', difficultyInput.id),

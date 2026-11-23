@@ -53,7 +53,7 @@ export interface QuestionsPathParams {
   analyticsVersionId?: string;
 }
 
-export function questionsPath(courseId: string, params: QuestionsPathParams = {}): string {
+export function questionsPath(courseId: string, params: QuestionsPathParams = {}, role: 'instructor' | 'ta' = 'instructor'): string {
   const query = new URLSearchParams();
   if (params.tab) query.set('tab', params.tab);
   if (params.q) query.set('q', params.q);
@@ -64,7 +64,7 @@ export function questionsPath(courseId: string, params: QuestionsPathParams = {}
   if (params.q && params.mode === 'edit' && params.flagVersionId) query.set('flagVersionId', params.flagVersionId);
   if (params.q && params.analyticsVersionId) query.set('analyticsVersionId', params.analyticsVersionId);
   const qs = query.toString();
-  return `/instructor/course/${encodeURIComponent(courseId)}/questions${qs ? `?${qs}` : ''}`;
+  return `/${role}/course/${encodeURIComponent(courseId)}/questions${qs ? `?${qs}` : ''}`;
 }
 
 /**
@@ -126,15 +126,15 @@ export function hasActiveFilters(filters: WorkspaceFilters): boolean {
 }
 
 /** Names of the row's LOs, for search and the row label. */
-export function objectiveNames(tree: CourseTree, loIds: readonly string[]): string[] {
+export function objectiveNames(tree: Pick<CourseTree, 'themes'>, loIds: readonly string[]): string[] {
   return tree.themes.flatMap((theme) => (theme.los ?? []).filter((lo) => loIds.includes(lo._id)).map((lo) => lo.name));
 }
 
-export function topicNames(tree: CourseTree, themeIds: readonly string[]): string[] {
+export function topicNames(tree: Pick<CourseTree, 'themes'>, themeIds: readonly string[]): string[] {
   return tree.themes.filter((theme) => themeIds.includes(theme._id)).map((theme) => theme.name);
 }
 
-export function filterRows(rows: readonly WorkspaceRow[], filters: WorkspaceFilters, tree: CourseTree, tab: WorkspaceTab): WorkspaceRow[] {
+export function filterRows(rows: readonly WorkspaceRow[], filters: WorkspaceFilters, tree: Pick<CourseTree, 'themes'>, tab: WorkspaceTab): WorkspaceRow[] {
   const needle = filters.search.trim().toLowerCase();
   return rows.filter((row) => {
     if (filters.themeId && !row.themeIds.includes(filters.themeId)) return false;
@@ -238,7 +238,7 @@ export function runHighlightSummary(createdIds: readonly string[], rowIds: reado
 }
 
 /** "Topic 2 / LO 1" style label from the course tree. */
-export function topicLoLabel(tree: CourseTree, loIds: readonly string[], themeIds: readonly string[]): string {
+export function topicLoLabel(tree: Pick<CourseTree, 'themes'>, loIds: readonly string[], themeIds: readonly string[]): string {
   const parts: string[] = [];
   tree.themes.forEach((theme, themeIndex) => {
     const los = (theme.los ?? []).filter((lo) => loIds.includes(lo._id));

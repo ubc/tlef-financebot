@@ -189,6 +189,9 @@ export const env = {
   llmModelGenerator: stepModel('LLM_MODEL_GENERATOR'),
   llmModelReviewer: stepModel('LLM_MODEL_REVIEWER'),
   llmModelMasteryEvaluator: stepModel('LLM_MODEL_MASTERY_EVALUATOR'),
+  // Writes the final course outline (topics and LOs) from analyzed evidence.
+  // Material reading, batch synthesis and source review stay on Utility.
+  llmModelOutlineOrganizer: stepModel('LLM_MODEL_OUTLINE_ORGANIZER'),
 
   // CWL PUIDs granted the platform Admin role (PRD §3, §8). Comma-separated.
   adminCwlAllowlist: csvList('ADMIN_CWL_ALLOWLIST'),
@@ -214,12 +217,13 @@ export const env = {
 
   // Process-local admission limits count observed SDK sends, including JSON repairs.
   authoringProviderConcurrency: Number(optional('AUTHORING_PROVIDER_CONCURRENCY', '4')),
-  authoringExtractionConcurrency: Number(optional('AUTHORING_EXTRACTION_CONCURRENCY', '2')),
+  authoringExtractionConcurrency: Number(optional('AUTHORING_EXTRACTION_CONCURRENCY', '4')),
   authoringMaxSends: Number(optional('AUTHORING_MAX_SENDS', '256')),
   authoringMaxInputTokens: Number(optional('AUTHORING_MAX_INPUT_TOKENS', '24000')),
   authoringStructureMaxInputTokens: Number(optional('AUTHORING_STRUCTURE_MAX_INPUT_TOKENS', '200000')),
   authoringMaxOutputTokens: Number(optional('AUTHORING_MAX_OUTPUT_TOKENS', '24000')),
   authoringMaxEstimatedTokens: Number(optional('AUTHORING_MAX_ESTIMATED_TOKENS', '2000000')),
+  authoringStructureMaxEstimatedTokens: Number(optional('AUTHORING_STRUCTURE_MAX_ESTIMATED_TOKENS', '12000000')),
 } as const;
 
 export const isProduction = env.nodeEnv === 'production';

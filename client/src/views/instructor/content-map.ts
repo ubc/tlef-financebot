@@ -1,4 +1,4 @@
-import { getCourseContentMap, getCourseTree, getCourseKnowledgeGraph, type CourseKnowledgeGraph, type ContentMapLo } from '../../api.js';
+import { getCourseContentMap, getCourseTree, getMyCourseCapabilities, getCourseKnowledgeGraph, type CourseKnowledgeGraph, type ContentMapLo } from '../../api.js';
 import { el, mount } from '../../dom.js';
 import { pageHeader } from '../../instructor-ui.js';
 import { emptyState, errorState, loadingState } from '../../ui.js';
@@ -6,17 +6,23 @@ import type { RouteParams } from '../../router.js';
 import { coverageGraph } from './coverage-graph.js';
 import { attachTutorial } from '../../tutorials.js';
 
-async function renderContentMapInner(outlet: HTMLElement, courseId: string): Promise<void> {
+async function renderContentMapInner(outlet: HTMLElement, courseId: string, role: 'ta' | 'instructor'): Promise<void> {
   const root = el('div', { class: 'view view--coverage' }, loadingState('Loading coverage…')); mount(outlet, root);
   try {
-    const [map, tree] = await Promise.all([getCourseContentMap(courseId), getCourseTree(courseId)]);
+    const isTa = role === 'ta';
+    const [map, tree, permissions] = await Promise.all([
+      getCourseContentMap(courseId),
+      isTa ? null : getCourseTree(courseId),
+      isTa ? getMyCourseCapabilities(courseId) : null,
+    ]);
+    if (!root.isConnected) return;
     const rows = map.themes.flatMap(t => t.los.map(lo => ({ ...lo, topic: t.name, themeId: t.themeId })));
     let view = 'coverage', filter = 'all', search = '', selected = rows[0]?.loId ?? '', topic = map.themes[0]?.themeId ?? '';
     let graph: CourseKnowledgeGraph | undefined; let graphRequest = 0;
     const ready = (lo: ContentMapLo) => lo.materials.some(m => m.status === 'ready') && lo.questionCounts.approved >= 3;
     const pending = (lo: ContentMapLo) => lo.questionCounts.draft + lo.questionCounts['pending-review'] + lo.questionCounts.reviewed;
-    const destination = (path: string, loId?: string) => `#/instructor/course/${encodeURIComponent(courseId)}/${path}${loId ? `${path.includes('?') ? '&' : '?'}loId=${encodeURIComponent(loId)}` : ''}`;
-    const released = (id: string) => { const date = tree.themes.find(t => t._id === id)?.availableFrom; return !!date && Date.parse(date) <= Date.now(); };
+    const destination = (path: string, loId?: string) => `#/${role}/course/${encodeURIComponent(courseId)}/${path}${loId ? `${path.includes('?') ? '&' : '?'}loId=${encodeURIComponent(loId)}` : ''}`;
+    const released = (id: string) => { const date = tree?.themes.find(t => t._id === id)?.availableFrom; return !!date && Date.parse(date) <= Date.now(); };
     const actions = el('div', { class: 'coverage-switch', 'aria-label': 'Coverage view' });
     const panel = el('div');
     const tabs = el('div', { class: 'coverage-filters' });
@@ -40,19 +46,19 @@ async function renderContentMapInner(outlet: HTMLElement, courseId: string): Pro
         try {
           graph ??= await getCourseKnowledgeGraph(courseId);
           if (request !== graphRequest || !root.isConnected) return;
-          host.replaceChildren(coverageGraph(courseId, graph, shown.filter(lo => lo.themeId === topic).map(lo => lo.loId), id => { selected = id; view = 'coverage'; void draw(); }));
+          host.replaceChildren(coverageGraph(courseId, graph, shown.filter(lo => lo.themeId === topic).map(lo => lo.loId), id => { selected = id; view = 'coverage'; void draw(); }, role));
         } catch (e) { if (request === graphRequest) host.replaceChildren(errorState(e instanceof Error ? e.message : String(e), () => void draw())); }
         return;
       }
-      const table = el('table', { class: 'coverage-table' }, el('thead', {}, el('tr', {}, ...['Learning objective', 'Materials', 'Questions', 'Topic release'].map(text => el('th', { scope: 'col', text })))));
+      const table = el('table', { class: 'coverage-table' }, el('thead', {}, el('tr', {}, ...['Learning objective', 'Materials', 'Questions', ...(!isTa ? ['Topic release'] : [])].map(text => el('th', { scope: 'col', text })))));
       const body = el('tbody'); let previous = '';
       for (const lo of shown) {
-        if (previous !== lo.topic) { previous = lo.topic; body.append(el('tr', { class: 'coverage-topic-row' }, el('th', { colspan: 4, scope: 'rowgroup', text: lo.topic }))); }
+        if (previous !== lo.topic) { previous = lo.topic; body.append(el('tr', { class: 'coverage-topic-row' }, el('th', { colspan: isTa ? 3 : 4, scope: 'rowgroup', text: lo.topic }))); }
         body.append(el('tr', { class: selected === lo.loId ? 'is-selected' : '' },
           el('td', {}, el('button', { type: 'button', 'aria-pressed': selected === lo.loId, onclick: () => { selected = lo.loId; topic = lo.themeId; void draw(); } }, lo.name)),
           el('td', { text: lo.materials.some(m => m.status === 'ready') ? '✓ Ready' : lo.materials.length ? 'Processing / failed' : 'Missing' }),
           el('td', {}, el('span', { text: `${lo.questionCounts.approved} / 3 approved` }), el('small', { text: `${pending(lo)} to review` })),
-          el('td', { text: released(lo.themeId) ? 'Released' : 'Not released' })));
+          !isTa && el('td', { text: released(lo.themeId) ? 'Released' : 'Not released' })));
       }
       table.append(body);
       const lo = shown.find(r => r.loId === selected)!;
@@ -61,18 +67,22 @@ async function renderContentMapInner(outlet: HTMLElement, courseId: string): Pro
       const path = noSource ? 'materials' : pending(lo) ? 'questions?tab=review' : running ? 'preseeding' : ready(lo) ? 'questions?tab=approved' : 'preseeding';
       const label = noSource ? 'Review supporting materials' : pending(lo) ? 'Review questions' : running ? 'View generation' : ready(lo) ? 'View approved questions' : 'Generate questions';
       const reason = noSource ? 'Link a ready source before generating questions.' : pending(lo) ? 'Review existing questions before generating more.' : running ? 'Generation is already in progress for this objective.' : ready(lo) ? 'The coverage target is met. Release and content checks still determine student access.' : 'This objective needs more approved questions to meet the coverage target.';
+      const inspectionPath = isTa && !noSource ? pending(lo) ? 'questions?tab=review' : 'questions?tab=approved' : path;
+      const inspectionLabel = isTa && !noSource ? pending(lo) ? 'Review questions' : 'View approved questions' : label;
       const inspector = el('aside', { class: 'coverage-inspector' }, el('small', { text: lo.topic }), el('h2', { text: lo.name }),
         el('p', { class: 'coverage-finding', text: reason }), el('p', { text: `${lo.questionCounts.approved} approved · ${pending(lo)} awaiting review` }),
-        el('a', { class: 'btn btn--instr-primary', href: destination(path, path === 'materials' ? undefined : lo.loId), text: label + ' →' }),
+        (!isTa || noSource || permissions?.['question.review']) && el('a', {
+          class: 'btn btn--instr-primary', href: destination(inspectionPath, inspectionPath === 'materials' ? undefined : lo.loId), text: inspectionLabel + ' →',
+        }),
         el('h3', { text: 'Supporting materials' }), ...lo.materials.map(m => el('p', { text: `${m.name} · ${m.status}` })),
         el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => { topic = lo.themeId; view = 'graph'; void draw(); } }, 'Explore relationships →'));
       panel.replaceChildren(el('div', { class: 'coverage-layout' }, el('div', { class: 'coverage-table-wrap' }, table), inspector));
     }
     await draw();
-    attachTutorial(root, 'instructor-coverage', {
+    if (!isTa) attachTutorial(root, 'instructor-coverage', {
       'coverage-summary': '.coverage-summary',
       'coverage-controls': '.coverage-toolbar',
     });
-  } catch (e) { root.replaceChildren(errorState(e instanceof Error ? e.message : String(e), () => void renderContentMapInner(outlet, courseId))); }
+  } catch (e) { root.replaceChildren(errorState(e instanceof Error ? e.message : String(e), () => void renderContentMapInner(outlet, courseId, role))); }
 }
-export function renderContentMap(outlet: HTMLElement, params: RouteParams): void { void renderContentMapInner(outlet, params.id); }
+export function renderContentMap(outlet: HTMLElement, params: RouteParams, role: 'ta' | 'instructor' = 'instructor'): void { void renderContentMapInner(outlet, params.id, role); }

@@ -24,7 +24,7 @@ export interface LoContext {
  * position in the whole outline. Numbered BEFORE filtering — numbering the
  * filtered list shifted every LO after a tagged one down by one (2026-09-14: a
  * question tagged to LO 2 listed the real LO 3 as "LO 2"). */
-export function addableLoOptions(tree: CourseTree, taggedLoIds: readonly string[]): Array<{ id: string; label: string }> {
+export function addableLoOptions(tree: Pick<CourseTree, 'themes'>, taggedLoIds: readonly string[]): Array<{ id: string; label: string }> {
   return tree.themes.flatMap((theme, themeIndex) =>
     (theme.los ?? [])
       .map((lo, loIndex) => ({ id: lo._id, label: `Topic ${themeIndex + 1} › LO ${loIndex + 1}: ${lo.name}` }))
@@ -33,7 +33,7 @@ export function addableLoOptions(tree: CourseTree, taggedLoIds: readonly string[
 }
 
 /** Where an LO sits in the outline (its Topic and position), or `undefined`. */
-export function findLoContext(tree: CourseTree, loId: string): LoContext | undefined {
+export function findLoContext(tree: Pick<CourseTree, 'themes'>, loId: string): LoContext | undefined {
   for (let themeIndex = 0; themeIndex < tree.themes.length; themeIndex += 1) {
     const theme = tree.themes[themeIndex];
     const los = theme.los ?? [];

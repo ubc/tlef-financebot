@@ -10,7 +10,6 @@ jest.mock('../../server/src/services/question-generation/grounding', () => ({
 jest.mock('../../server/src/services/content-runs.service', () => ({
   updateContentRun: jest.fn(async () => ({})), failContentRun: jest.fn(async () => ({})), assertContentRunActive: jest.fn(async () => undefined),
 }));
-jest.mock('../../server/src/services/generation-preview', () => ({ withGenerationPreview: (_r: unknown, _i: unknown, fn: (t: unknown) => unknown) => fn(undefined) }));
 jest.mock('../../server/src/components/mongodb/collections', () => ({ losCol: jest.fn(), questionsCol: jest.fn(), questionVersionsCol: jest.fn() }));
 jest.mock('../../server/src/services/materials.service', () => ({ courseCollection: jest.fn(() => 'collection') }));
 
@@ -166,6 +165,68 @@ describe('regenerateQuestionVariant', () => {
     expect(variant.stem).toBe('New stem');
     expect(createQuestion).not.toHaveBeenCalled();
   });
+
+  it('forwards only question preview fields while writing and checks the finished draft once', async () => {
+    const questionId = new ObjectId();
+    const versionId = new ObjectId();
+    const updateOne = jest.fn(async () => ({ matchedCount: 1 }));
+    jest.mocked(questionsCol).mockReturnValue({
+      findOne: async () => ({ _id: questionId, courseId, currentVersionId: versionId, loIds: [loId] }),
+      updateOne,
+    } as never);
+    jest.mocked(questionVersionsCol).mockReturnValue({
+      findOne: async () => ({ type: 'mcq', stem: 'Old stem', options: [], difficulty: 'easy' }),
+    } as never);
+
+    const draft = conceptual('New draft');
+    const stage = jest.fn();
+    let startReview!: () => void;
+    const reviewStarted = new Promise<void>((resolve) => { startReview = resolve; });
+    let finishReview!: () => void;
+    const reviewing = new Promise<void>((resolve) => { finishReview = resolve; });
+    let sawPreview!: () => void;
+    const previewShown = new Promise<void>((resolve) => { sawPreview = resolve; });
+    let finishWriting!: () => void;
+    const writing = new Promise<void>((resolve) => { finishWriting = resolve; });
+    const preview = jest.fn(() => sawPreview());
+    const finalDraft = { ...draft, stem: 'Complete draft' };
+    jest.mocked(completeJson)
+      .mockImplementationOnce(async (_prompt, options) => {
+        options?.onText?.(JSON.stringify({ ...draft, reasoning: 'Private model text' }));
+        await writing;
+        options?.onText?.(JSON.stringify(finalDraft));
+        return finalDraft;
+      })
+      .mockImplementationOnce(async () => {
+        startReview();
+        await reviewing;
+        return { decision: 'pass', reasoning: 'Checked', roleAssessment: '', suggestions: [] };
+      });
+
+    const result = regenerateQuestionVariant({ questionId, courseId, prompt: 'Change it.', byPuid: 'p1' }, {
+      stage, preview, checkpoint: async () => undefined,
+    });
+    try {
+      await previewShown;
+      expect(preview).toHaveBeenCalledWith({ stem: draft.stem, options: draft.options, difficulty: draft.difficulty });
+      expect(completeJson).toHaveBeenCalledTimes(1);
+      expect(updateOne).not.toHaveBeenCalled();
+      expect(stage.mock.calls.flat()).toEqual(['retrieving', 'generating']);
+      finishWriting();
+      await reviewStarted;
+      expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ stem: 'Complete draft' }));
+      expect(stage.mock.calls.flat()).toEqual(['retrieving', 'generating', 'reviewing']);
+      expect(updateOne).not.toHaveBeenCalled();
+    } finally {
+      finishWriting();
+      finishReview();
+    }
+    await expect(result).resolves.toMatchObject({ variant: { stem: finalDraft.stem, agentDecision: { decision: 'pass' } } });
+    expect(completeJson).toHaveBeenCalledTimes(2);
+    expect(updateOne).toHaveBeenCalledTimes(1);
+    expect(createQuestion).not.toHaveBeenCalled();
+  });
+
 });
 
 it('records the grounding summary on the run after retrieval', async () => {

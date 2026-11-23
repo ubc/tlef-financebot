@@ -168,18 +168,49 @@ it('persists valid siblings but rejects a foreign response identity without narr
   expect(replay.complete).not.toHaveBeenCalled();
 });
 
-it('stops after the second invalid semantic response while retaining independently valid rows', async () => {
+it('withholds a still-uncited positive row after its one correction instead of failing the review', async () => {
   const { batches, batch } = fixture(); const input = harness(batches); const raw = verdict(batch); raw.reviews[1]!.coveredEvidenceIds = [];
   input.complete.mockResolvedValueOnce(raw).mockResolvedValueOnce({ reviews: [raw.reviews[1]] });
-  await expect(reviewStructureProposal(input)).rejects.toThrow('structure-grounding-review-coverage');
+  const findings = await reviewStructureProposal(input);
   expect(input.complete).toHaveBeenCalledTimes(2);
-  expect(input.progress.findings.map(row => row.id)).toEqual(['L1']);
-  expect(input.progress.attempts).toEqual({ L1: 1, L2: 2 });
-  expect(input.progress.unresolvedDispatchIds).toEqual([]);
+  expect(findings.map(row => [row.id, row.status])).toEqual([['L1', 'supported'], ['L2', 'uncertain']]);
+  expect(findings[1]).toMatchObject({ coveredEvidenceIds: [], reason: expect.stringMatching(/^Automatic review could not cite/) });
+  expect(input.progress.failures).toEqual([]);
+});
+
+it('credits only cited coverage on the final attempt', async () => {
+  const { batches, batch } = fixture(); const input = harness(batches); const raw = verdict(batch);
+  const objective = batch.objectives[1]!; const foreignPoint = batch.objectives[0]!.learningPoints[0]!.id;
+  raw.reviews[1]!.coveredEvidenceIds = [...raw.reviews[1]!.coveredEvidenceIds];
+  // First reply: coverage claims a point whose source is not cited -> strict failure and one correction.
+  const uncited = { ...raw.reviews[1]!, sourceIds: [] as string[], sourceStatus: 'supported' };
+  input.complete.mockResolvedValueOnce({ reviews: [raw.reviews[0], uncited] }).mockResolvedValueOnce({ reviews: [{ ...raw.reviews[1]! }] });
+  const findings = await reviewStructureProposal(input);
+  expect(findings.find(row => row.id === objective.id)).toMatchObject({ status: 'supported' });
+  expect(findings.find(row => row.id === objective.id)!.coveredEvidenceIds).not.toContain(foreignPoint);
+});
+
+it('withholds an objective whose source citation is still invalid after its correction', async () => {
+  const { batches, batch } = fixture(); const input = harness(batches); const raw = verdict(batch); raw.reviews[1]!.sourceIds = ['S-foreign'];
+  input.complete.mockResolvedValueOnce(raw).mockResolvedValueOnce({ reviews: [raw.reviews[1]] });
+  const findings = await reviewStructureProposal(input);
+  expect(input.complete).toHaveBeenCalledTimes(2);
+  expect(findings.map(row => [row.id, row.status])).toEqual([['L1', 'supported'], ['L2', 'uncertain']]);
+  expect(findings[1]).toMatchObject({ citedSourceIds: [], coveredEvidenceIds: [], reason: expect.stringContaining('structure-grounding-review-source') });
+  expect(input.progress.failures).toEqual([]);
+  // A durable replay of the withheld finding is accepted without another send.
   const replay = harness(batches, input.progress);
-  await expect(reviewStructureProposal(replay)).rejects.toThrow('structure-grounding-review-coverage');
+  await expect(reviewStructureProposal(replay)).resolves.toHaveLength(2);
   expect(replay.complete).not.toHaveBeenCalled();
 });
+
+it('still stops when a correction names an objective outside its request', async () => {
+  const { batches, batch } = fixture(); const input = harness(batches); const raw = verdict(batch); raw.reviews[1]!.sourceIds = ['S-foreign'];
+  input.complete.mockResolvedValueOnce(raw).mockResolvedValueOnce({ reviews: [verdict(batch, ['L2']).reviews[0], { ...raw.reviews[0]!, id: 'foreign-objective' }] });
+  await expect(reviewStructureProposal(input)).rejects.toThrow('structure-grounding-review-identity');
+  expect(input.complete).toHaveBeenCalledTimes(2);
+});
+
 
 it('rechecks currentness after a response and refuses to persist source-stale findings', async () => {
   const { batches } = fixture(1); const input = harness(batches);

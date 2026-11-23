@@ -7,6 +7,9 @@
 import {
   addQuestionInternalNote,
   ApiError,
+  addTaQuestionNote,
+  markTaQuestionReviewed,
+  type Capability,
   editQuestion,
   getQuestion,
   notifyRemediation,
@@ -16,7 +19,6 @@ import {
   type CourseTree,
   type Difficulty,
   type Flag,
-  type RegenerationVariant,
   type OptionRole,
   type PublicationState,
   type QuestionDetail,
@@ -33,6 +35,7 @@ import { renderRichText } from '../../render.js';
 import { protectUnsavedChanges } from '../../router.js';
 import { attachTutorial } from '../../tutorials.js';
 import { errorState, loadingState } from '../../ui.js';
+import { suggestPanel } from '../ta/question-detail.js';
 import { createFlagCard } from './questions-flag-card.js';
 import { authoringAnswer } from './authoring-answer.js';
 import { questionGenerationUsage } from './question-generation-usage.js';
@@ -48,7 +51,9 @@ import { pendingSuggestions, teamPanel } from './questions-team.js';
 
 export interface ReaderOptions {
   courseId: string;
-  tree: CourseTree;
+  taPermissions?: Record<Capability, boolean>;
+  shouldOfferTaDetail?: () => boolean;
+  tree: Pick<CourseTree, 'themes'>;
   release: () => QuestionWorkspace['release'];
   /** A mutation succeeded: refetch the workspace and show `message`. */
   onMutated: (message: string, questionId: string) => Promise<void> | void;
@@ -106,7 +111,8 @@ export function createQuestionReader(options: ReaderOptions) {
   const status = el('p', { class: 'questions-reader__notice', role: 'status' });
   const content = el('div', { class: 'questions-reader__content' });
   const root = el('article', { class: 'questions-reader', 'aria-label': 'Selected question' }, status, content);
-  const coursePath = `/instructor/course/${encodeURIComponent(options.courseId)}`;
+  const ta = options.taPermissions;
+  const coursePath = `/${ta ? 'ta' : 'instructor'}/course/${encodeURIComponent(options.courseId)}`;
   let row: WorkspaceRow | null = null;
   let detail: QuestionDetail | undefined;
   let generationUsage: HTMLElement | false = false;
@@ -114,6 +120,7 @@ export function createQuestionReader(options: ReaderOptions) {
   let flagCard: ReturnType<typeof createFlagCard> | undefined;
   let preview: ReturnType<typeof createQuestionPreview> | undefined;
   let compare: ReturnType<typeof createQuestionCompare> | undefined;
+  const comparisons = new Map<string, ReturnType<typeof createQuestionCompare>>();
   let params: ReturnType<typeof createQuestionParams> | undefined;
   let analyticsNotice: ReturnType<typeof createAnalyticsNotice> | undefined;
   let requestRevision = 0;
@@ -135,10 +142,17 @@ export function createQuestionReader(options: ReaderOptions) {
   protectUnsavedChanges(root, () => dirty || (mode === 'params' && !!params?.isDirty()), () => confirmDialog({ title: 'Discard unsaved changes?', message: 'Your saved question will be kept.', confirmLabel: 'Discard changes' }));
 
   const locked = (): boolean => busy || options.isBatchBusy();
+  const hasUnsavedEdits = (): boolean => dirty || (mode === 'params' && !!params?.isDirty());
+  const comparisonPending = (questionId: string): boolean => {
+    const comparison = comparisons.get(questionId);
+    return !!(comparison?.isGenerating() || comparison?.hasVariant());
+  };
+  const decidingVariant = (): boolean => mode === 'compare' && !!row && comparisonPending(row.id);
   const notifyState = (): void => options.onStateChange?.();
 
   /** Which modes the loaded question offers (Compare: To review only, P2-4). */
   function allowedMode(next: ReaderMode): ReaderMode {
+    if (ta && next !== 'read' && next !== 'preview') return 'read';
     if (next === 'edit' && detail?.state === 'archived') return 'read';
     if (next === 'compare' && detail && !REVIEW_STATES.has(detail.state)) return 'read';
     // P3-2: parameterized questions only, and not archived ones (like Edit).
@@ -151,7 +165,10 @@ export function createQuestionReader(options: ReaderOptions) {
   function applyMode(next: ReaderMode, fix: FlagFix | null = null): void {
     next = allowedMode(next);
     const changed = next !== mode || fix?.versionId !== flagFix?.versionId;
-    if (mode === 'compare' && next !== 'compare') compare?.clear();
+    if (mode === 'compare' && next !== 'compare') {
+      if (row) comparisons.delete(row.id);
+      compare?.clear();
+    }
     if (mode === 'params' && next !== 'params') params?.discard();
     mode = next;
     flagFix = mode === 'edit' ? fix : null;
@@ -166,13 +183,12 @@ export function createQuestionReader(options: ReaderOptions) {
 
   async function confirmLeave(): Promise<boolean> {
     if (dirty && !await confirmDialog({ title: 'Discard unsaved edits?', message: 'Your saved question will be kept.', confirmLabel: 'Discard edits' })) return false;
-    if (mode === 'compare' && compare?.hasVariant() && !await confirmDialog({ title: 'Discard the generated alternative?', message: 'The current question stays as it is. Generating again makes a new alternative.', confirmLabel: 'Discard alternative' })) return false;
     if (mode === 'params' && params?.isDirty() && !await confirmDialog({ title: 'Discard parameter changes?', message: 'The saved parameters are kept.', confirmLabel: 'Discard changes' })) return false;
     return true;
   }
 
   async function setMode(next: ReaderMode, fix: FlagFix | null = null): Promise<void> {
-    if ((next === mode && fix?.versionId === flagFix?.versionId) || locked()) return;
+    if ((next === mode && fix?.versionId === flagFix?.versionId) || locked() || decidingVariant()) return;
     if (!await confirmLeave()) return;
     applyMode(next, fix);
     draw();
@@ -188,18 +204,22 @@ export function createQuestionReader(options: ReaderOptions) {
   }
 
   async function load(target: WorkspaceRow, force = false): Promise<void> {
-    if (!force && row?.id === target.id && detail) { row = target; draw(); return; }
     const sameQuestion = row?.id === target.id;
+    if (!force && sameQuestion) { row = target; if (detail) draw(); return; }
+    const returningToCompare = !sameQuestion && comparisons.has(target.id);
     row = target; detail = undefined; generationUsage = false; flagCard = undefined;
     if (!sameQuestion) {
       preview = createQuestionPreview(target.id);
-      compare = createQuestionCompare({
+      const comparison = ta ? undefined : comparisons.get(target.id) ?? createQuestionCompare({
         courseId: options.courseId,
         questionId: target.id,
-        onBusy: (generating) => { busy = generating; draw(); },
-        onReplace: (variant) => { void replaceWithVariant(variant); },
+        onChange: () => {
+          if (comparison?.isGenerating()) comparisons.set(target.id, comparison);
+          if (compare === comparison && row?.id === target.id && mode === 'compare' && root.isConnected) draw();
+        },
       });
-      params = createQuestionParams({ questionId: target.id, onSave: (patch) => { void saveParams(patch); }, onChange: () => undefined });
+      compare = comparison;
+      params = ta ? undefined : createQuestionParams({ questionId: target.id, onSave: (patch) => { void saveParams(patch); }, onChange: () => undefined });
       analyticsNotice = undefined;
     }
     // A new question opens in Read, or in the URL's state when it is the URL's
@@ -207,12 +227,11 @@ export function createQuestionReader(options: ReaderOptions) {
     // always leaves Edit.
     const initial = !sameQuestion && pending?.questionId === target.id ? pending : undefined;
     if (!sameQuestion) pending = undefined;
-    const nextMode: ReaderMode = initial ? initial.mode : !sameQuestion ? 'read' : mode === 'edit' ? 'read' : mode;
-    pendingFlagVersionId = initial?.mode === 'edit' ? initial.flagVersionId : undefined;
+    const nextMode: ReaderMode = initial ? initial.mode : returningToCompare ? 'compare' : !sameQuestion || mode === 'edit' ? 'read' : mode;
+    pendingFlagVersionId = !ta && initial?.mode === 'edit' ? initial.flagVersionId : undefined;
     if (initial?.analyticsVersionId) {
       analyticsNotice = createAnalyticsNotice(options.courseId, target.id, initial.analyticsVersionId, () => { analyticsNotice = undefined; notifyState(); draw(); });
     }
-    if (mode === 'compare' && nextMode !== 'compare') compare?.clear();
     if (mode === 'params' && nextMode !== 'params') params?.discard();
     draft = null; baseline = null; dirty = false; flagFix = null;
     mode = nextMode;
@@ -223,28 +242,31 @@ export function createQuestionReader(options: ReaderOptions) {
       const result = await getQuestion(target.id);
       if (revision !== requestRevision || !root.isConnected) return;
       detail = result;
-      generationUsage = questionGenerationUsage(result);
-      flagCard = createFlagCard({
+      generationUsage = !ta && questionGenerationUsage(result);
+      if (!ta || ta['flag.triage']) flagCard = createFlagCard({
         courseId: options.courseId,
         questionId: result.id,
         highlightFlagId: options.highlightFlagId,
-        onChanged: () => { void options.onMutated('Flag resolved.', result.id); },
+        ta: Boolean(ta),
+        onChanged: () => { void options.onMutated(ta ? 'Recommendation sent to the instructor.' : 'Flag resolved.', result.id); },
         onCorrect: startFlagFix,
       });
       const card = flagCard;
-      void card.load().then(() => {
+      void card?.load().then(() => {
         // A flag fix from the URL needs the card's flags for that version.
         const versionId = pendingFlagVersionId;
         pendingFlagVersionId = undefined;
-        if (!versionId || card !== flagCard || mode !== 'edit' || dirty) return;
+        if (!versionId || !card || card !== flagCard || mode !== 'edit' || dirty) return;
         const flags = card.openFlagsFor(versionId);
         if (flags.length) { applyMode('edit', { versionId, flags, reply: '' }); draw(); }
       });
       const wanted = mode;
       mode = allowedMode(mode);
+      if (wanted === 'compare' && mode !== 'compare') comparisons.delete(target.id);
       if (mode === 'edit') applyMode('edit');
       if (wanted !== mode) notifyState();
       draw();
+      if (returningToCompare && mode === 'compare') compare?.reveal();
     } catch (error) {
       if (revision === requestRevision && root.isConnected) mount(content, errorState(errorText(error), () => { void load(target, true); }));
     }
@@ -462,9 +484,20 @@ export function createQuestionReader(options: ReaderOptions) {
 
   // --- Compare mode ----------------------------------------------------------
 
-  async function replaceWithVariant(variant: RegenerationVariant): Promise<void> {
+  function cancelVariant(): void {
+    if (!detail || !compare?.hasVariant() || locked()) return;
+    const reload = !compare.variantFor(detail.currentVersionId);
+    status.textContent = '';
+    applyMode('read');
+    if (reload && row) void load(row, true);
+    else draw({ resetReadingScroll: true });
+  }
+
+  async function replaceWithVariant(): Promise<void> {
     if (!detail || locked()) return;
     const current = detail;
+    const variant = compare?.variantFor(current.currentVersionId);
+    if (!variant) return;
     busy = true; status.textContent = ''; draw();
     try {
       // P2-5: the fields Question details saves. Compare is To review only, so no submitForReview.
@@ -477,15 +510,12 @@ export function createQuestionReader(options: ReaderOptions) {
         ...(variant.derivedValues !== undefined ? { derivedValues: variant.derivedValues } : {}),
         ...(variant.numericKind !== undefined ? { numericKind: variant.numericKind } : {}),
       });
-      busy = false;
       applyMode('read');
       await options.onMutated(`Variant saved as version ${saved.version}.`, current.id);
       if (row?.id === current.id) await load(row, true);
     } catch (error) {
-      busy = false;
-      status.textContent = error instanceof ApiError && error.status === 409
-        ? 'This question changed since you opened it. The alternative is kept here — reload the question before replacing it.'
-        : `${errorText(error)} The current question was not changed.`;
+      if (error instanceof ApiError && error.status === 409) compare?.invalidateReplacement();
+      else status.textContent = `Couldn't save the alternative: ${errorText(error)}`;
     } finally {
       busy = false;
       if (root.isConnected && detail) draw();
@@ -571,7 +601,7 @@ export function createQuestionReader(options: ReaderOptions) {
     if (!detail) return false;
     const current = detail;
     try {
-      const note = await addQuestionInternalNote(current.id, text);
+      const note = await (ta ? addTaQuestionNote : addQuestionInternalNote)(current.id, text);
       if (detail === current) {
         current.internalNotes = [...current.internalNotes, note];
         status.textContent = 'Comment added.';
@@ -596,6 +626,20 @@ export function createQuestionReader(options: ReaderOptions) {
     const disabled = locked();
     const btn = (label: string, onclick: () => void, primary = false): HTMLElement =>
       el('button', { class: `btn ${primary ? 'btn--instr-primary' : 'btn--ghost'} btn--sm`, type: 'button', disabled, onclick }, label);
+    if (ta) return ta['question.mark-reviewed'] && (current.state === 'draft' || current.state === 'pending-review')
+      ? [btn('Mark reviewed', () => { void mutate(snapshot => markTaQuestionReviewed(snapshot.id), 'Question marked as reviewed.'); }, true)]
+      : [];
+    if (mode === 'compare') {
+      if (!compare?.hasVariant()) return [];
+      return [
+        btn('Cancel', cancelVariant),
+        el('button', {
+          class: 'btn btn--instr-primary btn--sm', type: 'button',
+          disabled: disabled || !compare.variantFor(current.currentVersionId),
+          busy, onclick: replaceWithVariant,
+        }, 'Replace with variant'),
+      ];
+    }
     if (mode === 'edit') {
       return [
         btn('Cancel editing', () => { void setMode('read'); }),
@@ -620,14 +664,14 @@ export function createQuestionReader(options: ReaderOptions) {
       class: `questions-mode__option${mode === value ? ' is-active' : ''}`,
       type: 'button',
       'aria-pressed': String(mode === value),
-      disabled: locked() && mode !== value,
+      disabled: (locked() || decidingVariant()) && mode !== value,
       onclick: () => { void setMode(value); },
     }, label);
     return el('div', { class: 'questions-mode', role: 'group', 'aria-label': 'Reader mode' },
       option('read', 'Read'),
-      current.state !== 'archived' ? option('edit', 'Edit') : false,
+      !ta && current.state !== 'archived' ? option('edit', 'Edit') : false,
       option('preview', 'Preview'),
-      REVIEW_STATES.has(current.state) ? option('compare', 'Compare') : false,
+      !ta && REVIEW_STATES.has(current.state) ? option('compare', 'Compare') : false,
       allowedMode('params') === 'params' ? option('params', 'Parameters') : false);
   }
 
@@ -674,16 +718,16 @@ export function createQuestionReader(options: ReaderOptions) {
       el('section', { class: `questions-reader__visibility${listRow.studentVisible ? ' is-visible' : ''}` },
         el('h3', { text: 'Student visibility' }),
         el('p', { text: hiddenReasonText(listRow.hiddenReason, held) }),
-        listRow.hiddenReason === 'topic-unreleased' || listRow.hiddenReason === 'topic-scheduled'
+        ta ? false : listRow.hiddenReason === 'topic-unreleased' || listRow.hiddenReason === 'topic-scheduled'
           ? el('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: () => options.onOpenRelease(options.release().themes.find((theme) => current.themeIds.includes(theme.themeId) && !theme.released)?.themeId) }, 'Manage releases')
           : listRow.hiddenReason === 'course-unpublished' ? el('a', { href: `#${coursePath}/publish?section=publish`, text: 'Open publishing checklist →' }) : false));
   }
 
-  function draw(redraw: { resetInspectorScroll?: boolean } = {}): void {
+  function draw(redraw: { resetInspectorScroll?: boolean; resetReadingScroll?: boolean } = {}): void {
     if (!detail || !row) return;
-    const readingScroll = content.querySelector('.questions-reader__scroll')?.scrollTop ?? 0;
+    const readingScroll = redraw.resetReadingScroll ? 0 : content.querySelector('.questions-reader__scroll')?.scrollTop ?? 0;
     const contextScroll = redraw.resetInspectorScroll ? 0 : content.querySelector('.questions-reader__context')?.scrollTop ?? 0;
-    const stackedScroll = content.scrollTop;
+    const stackedScroll = redraw.resetReadingScroll ? 0 : content.scrollTop;
     const current = detail;
     const listRow = row;
     // A stable list sample belongs to one version; never mix it with a newer answer key.
@@ -721,11 +765,22 @@ export function createQuestionReader(options: ReaderOptions) {
       : inspectorTab === 'team'
         ? teamPanel({
           detail: current, tree: options.tree, busy: locked(), canEdit: current.state !== 'archived',
-          onLoad: (suggestion) => { void loadSuggestion(suggestion); }, onResolve: resolveSuggestion, onAddNote: addNote,
+          onLoad: (suggestion) => { void loadSuggestion(suggestion); },
+          onResolve: ta ? undefined : resolveSuggestion,
+          suggest: ta?.['question.suggest-edit'] && current.state !== 'archived'
+            ? el('details', {}, el('summary', { text: 'Suggest an edit' }), suggestPanel(current,
+              (suggestion) => {
+                if (detail !== current || !root.isConnected) return;
+                current.suggestions = [...(current.suggestions ?? []).filter(item => item.id !== suggestion.id), suggestion];
+                status.textContent = 'Suggestion sent to the instructor.';
+                draw();
+              }, false))
+            : undefined,
+          onAddNote: addNote,
         })
         : reviewPanel(current, listRow);
     const context = el('aside', { class: 'gw-plan questions-reader__context', 'aria-label': 'Question inspector' },
-      inspector({ active: inspectorTab, teamCount: pendingSuggestions(current).length, panel, onSelect: selectInspectorTab }));
+      inspector({ active: inspectorTab, readOnly: Boolean(ta), teamCount: pendingSuggestions(current).length, panel, onSelect: selectInspectorTab }));
 
     const reload = el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: busy, onclick: () => { if (row) void load(row, true); } }, 'Reload');
 
@@ -745,15 +800,25 @@ export function createQuestionReader(options: ReaderOptions) {
     mount(content,
       el('div', { class: 'gw-reader questions-reader__main' },
         readingPane,
-        el('footer', { class: 'gw-footer questions-reader__actions' },
-          el('div', { class: 'questions-reader__tools' }, reload),
-          el('div', { class: 'questions-reader__buttons', 'data-tutorial': mode === 'edit' ? 'question-editor-actions' : false }, ...actionButtons(current)))),
+        (mode !== 'compare' || compare?.hasVariant()) ? el('footer', { class: 'gw-footer questions-reader__actions' },
+          el('div', { class: 'questions-reader__tools' }, mode !== 'compare' ? reload : false),
+          el('div', { class: 'questions-reader__buttons', 'data-tutorial': mode === 'edit' ? 'question-editor-actions' : false }, ...actionButtons(current))) : false),
       wide ? false : context);
     readingPane.scrollTop = readingScroll;
     context.scrollTop = contextScroll;
     content.scrollTop = stackedScroll;
     // The editing and parameters walk-throughs start when their mode opens
     // (their anchors are data-tutorial attributes, so redraws keep them).
+    if (ta) {
+      const anchors = { 'ta-question-content': '.questions-reader__stem', 'ta-question-actions': '.questions-inspector__tabs' };
+      if (mode === 'read' && options.shouldOfferTaDetail?.() && tutorialOffered !== current.id) {
+        attachTutorial(root, 'ta-question-review', anchors);
+        tutorialOffered = current.id;
+      } else if (mode === 'read') {
+        for (const [name, selector] of Object.entries(anchors)) root.querySelector(selector)?.setAttribute('data-tutorial', name);
+      }
+      return;
+    }
     const tutorial = mode === 'edit' ? 'instructor-question-editor' : mode === 'params' ? 'instructor-parameters' : '';
     const offer = tutorial ? `${current.id}:${mode}` : '';
     if (offer && offer !== tutorialOffered) attachTutorial(root, tutorial, {});
@@ -780,8 +845,10 @@ export function createQuestionReader(options: ReaderOptions) {
       ...(flagFix ? { flagVersionId: flagFix.versionId } : pendingFlagVersionId ? { flagVersionId: pendingFlagVersionId } : {}),
       ...(analyticsNotice ? { analyticsVersionId: analyticsNotice.versionId } : {}),
     }),
-    /** Unsaved edits, an unsaved alternative, or a write in progress. */
-    isLocked: (): boolean => busy || dirty || (mode === 'compare' && !!compare?.hasVariant()) || (mode === 'params' && !!params?.isDirty()),
+    isSelectionLocked: (): boolean => busy || hasUnsavedEdits(),
+    async confirmQuestionChange(): Promise<boolean> { return !locked() && await confirmLeave() && !locked(); },
+    isLocked: (): boolean => busy || hasUnsavedEdits() || decidingVariant(),
+    comparisonPending,
     setNotice(message: string): void { status.textContent = message; },
   };
 }

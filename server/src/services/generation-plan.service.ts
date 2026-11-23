@@ -23,7 +23,11 @@ import { enqueueGenerationRun } from './generation.service';
 /** Approved questions per tier that count as "covered". Sums to 5, the
  * preseeding target the setup guide already shows. */
 export const TIER_TARGETS: Readonly<Record<Difficulty, number>> = Object.freeze({ easy: 2, medium: 2, hard: 1 });
-export const PLAN_MAX_CELLS = 120;
+/** One batch (plan) is at most 200 questions (developer decision 2026-11-23).
+ * Cells may be as small as one question (rotated difficulty/type), so the cell
+ * cap matches the question cap. */
+export const PLAN_MAX_QUESTIONS = 200;
+export const PLAN_MAX_CELLS = PLAN_MAX_QUESTIONS;
 export const PLAN_MAX_COUNT = 20;
 
 export interface PlanCell {
@@ -127,6 +131,9 @@ export interface PlanResult {
  * ready material, daily limit) reports its error and does not stop the rest:
  * the instructor sees exactly which LOs did not start. */
 export async function enqueueGenerationPlan(courseId: ObjectId, cells: PlanCell[], byPuid: string, submission?: { id?: string; prompt?: string }): Promise<PlanResult> {
+  if (cells.length > PLAN_MAX_CELLS || cells.reduce((sum, cell) => sum + (Number.isInteger(cell.count) && cell.count > 0 ? cell.count : 0), 0) > PLAN_MAX_QUESTIONS) {
+    throw new Error('generation-plan-too-large');
+  }
   let submissionKey: string | undefined;
   if (submission?.id) {
     submissionKey = createHash('sha256').update(`${courseId}:${byPuid}:${submission.id}`).digest('hex');

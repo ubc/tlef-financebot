@@ -29,6 +29,8 @@ import {
   getRoster,
 } from '../services/courses.service';
 import { instructorWorkflowSummary } from '../services/instructor-workflow.service';
+import { courseStudentActivity } from '../services/course-people.service';
+import { courseGenerationCost } from '../services/course-generation-cost.service';
 import { classifyIdentifierList, parseRosterFile } from '../services/roster-import.service';
 import { permanentlyDeleteCourse } from '../services/course-deletion.service';
 
@@ -206,6 +208,23 @@ coursesRouter.get(
   ensureCourseInstructor(),
   async (req, res) => {
     res.json(await instructorWorkflowSummary(new ObjectId(String(req.params.courseId)), req.user!.puid));
+  },
+);
+
+coursesRouter.get(
+  '/courses/:courseId/dashboard-metrics',
+  validate({ params: courseIdParams }),
+  ensureCourseInstructor(),
+  async (req, res) => {
+    const courseId = new ObjectId(String(req.params.courseId));
+    const [students, generation] = await Promise.allSettled([
+      courseStudentActivity(courseId, req.user!),
+      courseGenerationCost(courseId),
+    ]);
+    res.json({
+      students: students.status === 'fulfilled' ? students.value : null,
+      generation: generation.status === 'fulfilled' ? generation.value : null,
+    });
   },
 );
 

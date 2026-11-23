@@ -7,7 +7,7 @@ jest.mock('../../server/src/components/mongodb/collections', () => Object.fromEn
   'sourceEvidenceExtractionsCol', 'coursesCol', 'structureReviewCheckpointsCol', 'structureReviewProgressCol', 'structureReviewAttemptsCol'].map(key => [key, jest.fn()])));
 jest.mock('../../server/src/components/genai/llm', () => ({ completeJson: jest.fn() }));
 jest.mock('../../server/src/components/jobs', () => ({ defineJob: jest.fn(), enqueueJob: jest.fn() }));
-jest.mock('../../server/src/services/admin.service', () => ({ utilityStepConfig: jest.fn(async () => ({ model: 'gpt-6-luna', reasoningEffort: 'none' })) }));
+jest.mock('../../server/src/services/admin.service', () => ({ utilityStepConfig: jest.fn(async () => ({ model: 'gpt-6-luna', reasoningEffort: 'none' })), outlineOrganizerStepConfig: jest.fn(async () => ({ model: 'gpt-6-luna', reasoningEffort: 'none' })) }));
 jest.mock('../../server/src/services/content-runs.service', () => ({ assertContentRunActive: jest.fn(), updateContentRun: jest.fn(), getContentRun: jest.fn() }));
 jest.mock('../../server/src/services/model-usage.service', () => ({ withModelUsage: async (_scope: unknown, work: () => unknown) => work() }));
 jest.mock('../../server/src/services/source-readiness.service', () => ({ ...jest.requireActual('../../server/src/services/source-readiness.service'),

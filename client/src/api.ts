@@ -218,9 +218,9 @@ export function saveAdminCapabilities(
   });
 }
 
-export const PIPELINE_STEPS = ['generator', 'reviewer', 'masteryEvaluator', 'utility'] as const;
+export const PIPELINE_STEPS = ['generator', 'reviewer', 'masteryEvaluator', 'utility', 'outlineOrganizer'] as const;
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
-export const COURSE_MODEL_STEPS = ['generator', 'reviewer', 'utility'] as const;
+export const COURSE_MODEL_STEPS = ['generator', 'reviewer', 'utility', 'outlineOrganizer', 'masteryEvaluator'] as const;
 export type CourseModelStep = (typeof COURSE_MODEL_STEPS)[number];
 export interface AdminCourseModels {
   revision: number;
@@ -285,6 +285,21 @@ export function getAdminCourseModels(courseId: string): Promise<AdminCourseModel
 
 export function saveAdminCourseModels(courseId: string, revision: number, overrides: AdminCourseModels['overrides']): Promise<AdminCourseModels> {
   return request(`/api/admin/courses/${encodeURIComponent(courseId)}/models`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision, overrides }),
+  });
+}
+
+/** The same shared per-course choice, as a course instructor edits it in Course Settings. */
+export interface InstructorCourseModels extends Omit<AdminCourseModels, 'availableModels'> {
+  selectableModels: Array<{ id: string; profile: CapabilityProfile }>;
+}
+
+export function getCourseModels(courseId: string): Promise<InstructorCourseModels> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/models`);
+}
+
+export function saveCourseModels(courseId: string, revision: number, overrides: InstructorCourseModels['overrides']): Promise<InstructorCourseModels> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/models`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision, overrides }),
   });
 }
@@ -1137,11 +1152,7 @@ export async function getCourseTree(courseId: string): Promise<CourseTree> {
   return { course, themes };
 }
 
-export interface CourseOutlineLo {
-  _id: string;
-  name: string;
-  order: number;
-}
+export type CourseOutlineLo = Pick<CourseTreeLo, '_id' | 'name' | 'order' | 'themeId'>;
 
 export interface CourseOutlineTheme {
   _id: string;
@@ -1162,8 +1173,14 @@ export interface CourseOutline {
 
 /** GET /api/courses/:courseId/outline -> safe course identity + theme/LO names.
  * The TA-accessible subset of `getCourseTree` (which is instructor-only). */
-export function getCourseOutline(courseId: string): Promise<CourseOutline> {
-  return request<CourseOutline>(`/api/courses/${encodeURIComponent(courseId)}/outline`);
+export async function getCourseOutline(courseId: string): Promise<CourseOutline> {
+  const outline = await request<{
+    course: CourseOutline['course'];
+    themes: Array<Omit<CourseOutlineTheme, 'los'> & { los: Array<Omit<CourseOutlineLo, 'themeId'>> }>;
+  }>(`/api/courses/${encodeURIComponent(courseId)}/outline`);
+  return { ...outline, themes: outline.themes.map(theme => ({
+    ...theme, los: (theme.los ?? []).map(lo => ({ ...lo, themeId: theme._id })),
+  })) };
 }
 
 /** PATCH /api/courses/:courseId { termStart?, termEnd?, feedbackStrategy?, autoPause?, published? } -> Course. */
@@ -1949,6 +1966,13 @@ export interface StructureResult {
     sourceInventory?: StructureSourceInventory;
     pageTextObservations?: StructurePageTextObservations;
     outlineGrounding?: OutlineGroundingReceipt;
+    /** Post-review gap pass: labelled unlinked points, credits and reviewed new LOs. */
+    gapPass?: {
+      version: 'coverage-gap-pass-v1'; checkedPoints: number; labelledPoints: number; creditedPoints: number;
+      roles: Record<'core' | 'example' | 'overview' | 'admin', number>; coreGapsBeforeFill: number;
+      newObjectives: { proposed: number; supported: number; withheld: number }; remainingGapIds: string[];
+      points: Array<{ id: string; role: 'core' | 'example' | 'overview' | 'admin' | 'unlabelled'; coveredBy: string[]; reason: string }>; failure?: string;
+    };
     materials: Array<{ materialId: string; name: string; chunks: number; sections: number; mappedObjectives: number }>;
     analyzedSections: number; extractedObjectives: number; mappedObjectives: number;
     unmappedEvidenceIds: string[];
@@ -2101,6 +2125,37 @@ export interface ModelUsageSummary extends ModelUsageTotals {
   retryVisibility: 'disabled' | 'unknown';
   stages: Array<ModelUsageTotals & { stage: string }>;
   models: Array<ModelUsageTotals & { provider: string; model: string }>;
+  cost?: ModelCostEstimate;
+}
+
+export interface ModelCostEstimate {
+  estimatedUsd: number | null;
+  unpricedCalls: number;
+  models: Array<{ provider: string; model: string; tokens: number | null; estimatedUsd: number | null; unpricedCalls: number }>;
+}
+
+export interface CourseDashboardMetrics {
+  students: { enrolled: number; active: number; usageRate: number | null; windowDays: number } | null;
+  generation: {
+    total: ModelCostEstimate & { tokens: number | null; partial: boolean };
+    generationTokens: number | null;
+    average: { tokens: number; estimatedUsd: number | null; sampleSize: number; sampleKind: 'saved-question' | 'alternative' } | null;
+    forecast: { generator: string; checker: string; tokens: number | null; estimatedUsd: number | null };
+  } | null;
+}
+
+export function getCourseDashboardMetrics(courseId: string): Promise<CourseDashboardMetrics> {
+  return request(`/api/courses/${encodeURIComponent(courseId)}/dashboard-metrics`);
+}
+
+export interface QuestionGenerationUsage {
+  original: { runId: string; wholeTask: boolean; partial: boolean; summary: ModelUsageSummary } | null;
+  alternatives: ModelUsageSummary | null;
+  alternativesPartial: boolean;
+}
+
+export function getQuestionGenerationUsage(questionId: string): Promise<QuestionGenerationUsage> {
+  return request(`/api/questions/${encodeURIComponent(questionId)}/generation-usage`);
 }
 
 export interface ModelCallReceipt {
@@ -2709,21 +2764,61 @@ export interface RegenerationVariant {
   };
 }
 
-/** Generate a transient alternative. It is not saved until editQuestion is
- * explicitly called with the returned content. */
-export function regenerateQuestion(
+export interface RegenerationPreview {
+  stem: string;
+  difficulty?: string;
+  options?: Array<{ key: string; text: string; explanation: string }>;
+}
+
+export type RegenerationStage = 'retrieving' | 'generating' | 'reviewing';
+export type RegenerationUpdate = { stage: RegenerationStage } | { preview: RegenerationPreview };
+
+type RegenerationResult = { variant: RegenerationVariant };
+
+/** Content negotiation keeps the same POST and supports existing JSON servers
+ * without automatically resubmitting a generation request. */
+export async function regenerateQuestion(
   courseId: string,
   questionId: string,
   prompt: string,
-): Promise<{ variant: RegenerationVariant }> {
-  return request<{ variant: RegenerationVariant }>(
-    `/api/courses/${encodeURIComponent(courseId)}/questions/${encodeURIComponent(questionId)}/regenerate`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
-    },
-  );
+  onUpdate: (update: RegenerationUpdate) => void,
+): Promise<RegenerationResult> {
+  const path = `/api/courses/${encodeURIComponent(courseId)}/questions/${encodeURIComponent(questionId)}/regenerate`;
+  const response = await requestResponse(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!response.headers.get('Content-Type')?.startsWith('text/event-stream')) {
+    return response.json() as Promise<RegenerationResult>;
+  }
+
+  const reader = response.body?.getReader();
+  const interrupted = () => new Error('Live generation was interrupted. Generate again to retry.');
+  if (!reader) throw interrupted();
+  const decoder = new TextDecoder();
+  let pending = '';
+  try {
+    for (;;) {
+      const { value, done } = await reader.read().catch(() => { throw interrupted(); });
+      if (done) throw interrupted();
+      pending += decoder.decode(value, { stream: true });
+      const frames = pending.split(/\r?\n\r?\n/);
+      pending = frames.pop() ?? '';
+      for (const frame of frames) {
+        const lines = frame.split(/\r?\n/);
+        const event = lines.find(line => line.startsWith('event:'))?.slice(6).trim();
+        if (event !== 'progress' && event !== 'preview' && event !== 'result' && event !== 'error') continue;
+        const data = JSON.parse(lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n'));
+        if (event === 'result') return data as RegenerationResult;
+        if (event === 'error') throw new ApiError(data.error, data.status, response.headers.get('X-Request-ID') ?? undefined);
+        onUpdate(event === 'preview' ? { preview: data as RegenerationPreview } : { stage: data.stage as RegenerationStage });
+      }
+    }
+  } finally {
+    void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
 }
 
 // --- Instructor: question import (IN-Q01) -----------------------------------
@@ -3174,6 +3269,7 @@ export function patchQuestionParams(
  * would actually see, as opposed to the raw {{placeholder}} template the
  * instructor edits. */
 export interface QuestionSample {
+  versionId?: string;
   seed: number;
   stem: string;
   /** `explanation` is carried so the detail page can RENDER the rationale
@@ -3929,6 +4025,17 @@ export interface WorkflowPage extends DiagnosticPage<WorkflowGroup> {
   truncated: boolean; windowMinutes: number; limitations: string[];
 }
 export const listAdminModelUsage = (filters: ModelUsageFilters) => request<DiagnosticPage<ModelCallReceipt> & { summary: ModelUsageSummary }>(`/api/admin/model-usage?${diagnosticQuery(filters)}`);
+export interface AdminQuestionUsageAverage { savedQuestions: number; tokens: number; estimatedUsd: number | null }
+export interface AdminAiUsage {
+  summary: ModelUsageSummary & { cost: ModelCostEstimate };
+  truncated: boolean;
+  average: AdminQuestionUsageAverage | null;
+  courses: Array<{
+    courseId: string | null; courseCode?: string; name?: string; section?: string; term?: string;
+    tokens: number | null; observedCalls: number; estimatedUsd: number | null; partial: boolean; average: AdminQuestionUsageAverage | null;
+  }>;
+}
+export const getAdminAiUsage = (range: { from?: string; until?: string }) => request<AdminAiUsage>(`/api/admin/ai-usage?${diagnosticQuery(range)}`);
 export const listAdminWorkflows = (filters: ModelUsageFilters) => request<WorkflowPage>(`/api/admin/workflows?${diagnosticQuery(filters)}`);
 export const listAdminAuditHistory = (filters: DiagnosticFilters) => request<DiagnosticPage<AuditHistoryRecord>>(`/api/admin/audit-history?${diagnosticQuery(filters)}`);
 export const listAdminQuestions = (filters: DiagnosticFilters) => request<DiagnosticPage<AdminQuestionRow>>(`/api/admin/all-questions?${diagnosticQuery(filters)}`);

@@ -27,8 +27,9 @@ export const operationAudit: RequestHandler = (req, res, next) => {
   const fingerprints = requestFingerprints(peer, req.get('user-agent'), new Date(started), env.sessionSecret,
     proxy.forwarded && proxy.trustedPeer ? req.ip : undefined);
   const slowThresholdMs = 30000;
+  const isEventSubscription = () => req.method === 'GET' && String(res.getHeader('Content-Type')).includes('text/event-stream');
   const slowTimer = setTimeout(() => {
-    if (String(res.getHeader('Content-Type')).includes('text/event-stream')) return;
+    if (isEventSubscription()) return;
     console.warn('[http.operation_pending]', JSON.stringify({ requestId, method: req.method,
       elapsedMs: Date.now() - started, headersSent: res.headersSent, request: requestMetadata }));
   }, slowThresholdMs);
@@ -82,6 +83,7 @@ export const operationAudit: RequestHandler = (req, res, next) => {
     recorded = true;
     clearTimeout(slowTimer);
     void usage.close();
+    if (typeof res.locals.operationStreamError === 'string') response.error = safeDiagnostic(res.locals.operationStreamError);
     const failed = aborted || res.statusCode >= 400 || Boolean(response.error) || Boolean(res.locals.operationException);
     const rawPath = req.originalUrl.split('?')[0];
     // Authenticated browser reports own their request ID. A client navigating
@@ -90,9 +92,9 @@ export const operationAudit: RequestHandler = (req, res, next) => {
     if (rawPath === '/api/diagnostics/client-error' && res.statusCode < 400) return;
     // Closing an established SSE connection on navigation is normal, not a
     // failed user action. Failed handshakes are still recorded below.
-    if (res.statusCode < 400 && !res.locals.operationException && String(res.getHeader('Content-Type')).includes('text/event-stream')) return;
+    if (res.statusCode < 400 && !res.locals.operationException && isEventSubscription()) return;
     // Usage refreshes are diagnostics reads, not new user workflow steps.
-    if (!failed && req.method === 'GET' && (/\/content-runs\/[a-f\d]{24}\/usage$/i.test(rawPath) || /^\/api\/admin\/(model-usage|workflows)/.test(rawPath))) return;
+    if (!failed && req.method === 'GET' && (/\/content-runs\/[a-f\d]{24}\/usage$/i.test(rawPath) || /^\/api\/admin\/(model-usage|workflows|ai-usage$)/.test(rawPath))) return;
     // Successful infrastructure polls are intentionally excluded. Failures stay.
     if (!failed && req.method === 'GET' && rawPath === '/api/notifications') return;
     if (!failed && (/^\/api\/(health|auth\/me|diagnostics\/client-error)$/.test(rawPath) || /\/events$/.test(rawPath))) return;

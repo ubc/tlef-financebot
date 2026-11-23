@@ -5,6 +5,7 @@ import { ensureAdmin } from '../components/auth';
 import { validate } from '../middleware/validate';
 import { listOperations, operationDetail, listRuns, runDetail, listAuditHistory, listAllQuestions, listAdminModelUsage, questionDiagnostic, reproduceQuestion, type DiagnosticQuery } from '../services/admin-diagnostics.service';
 import { listWorkflows, type WorkflowQuery } from '../services/admin-workflow.service';
+import { getAdminAiUsage } from '../services/admin-ai-usage.service';
 import type { ModelUsageFilters } from '../types/model-usage';
 
 export const adminDiagnosticsRouter = Router();
@@ -33,6 +34,11 @@ const workflowQuery = z.object({
   .refine(value => !value.from || !value.until || value.from <= value.until, 'Start must precede end.');
 adminDiagnosticsRouter.get('/admin/model-usage', ensureAdmin(), validate({ query: usageQuery }), async (req, res) => {
   res.json(await listAdminModelUsage(req.query as unknown as ModelUsageFilters));
+});
+const aiUsageQuery = z.object({ from: z.string().datetime().optional(), until: z.string().datetime().optional() })
+  .refine(value => !value.from || !value.until || Date.parse(value.from) <= Date.parse(value.until), 'Start must precede end.');
+adminDiagnosticsRouter.get('/admin/ai-usage', ensureAdmin(), validate({ query: aiUsageQuery }), async (req, res) => {
+  res.set('Cache-Control', 'private, no-store').json(await getAdminAiUsage(req.query as z.infer<typeof aiUsageQuery>));
 });
 adminDiagnosticsRouter.get('/admin/workflows', ensureAdmin(), validate({ query: workflowQuery }), async (req, res) => {
   res.json(await listWorkflows(req.query as unknown as WorkflowQuery));

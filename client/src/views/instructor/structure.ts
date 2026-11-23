@@ -11,6 +11,8 @@ import {
   archiveTheme,
   assignMaterial,
   getCourseTree,
+  getCourseOutline,
+  getCourseContentMap,
   getPreseeding,
   listMaterials,
   updateLo,
@@ -147,19 +149,24 @@ function addNameForm(opts: {
   );
 }
 
-async function renderStructureInner(outlet: HTMLElement, courseId: string): Promise<void> {
+async function renderStructureInner(outlet: HTMLElement, courseId: string, readOnly = false): Promise<void> {
   const body = el('div', {}, loadingState('Loading course structure…'));
   const root = el('div', { class: 'view view--structure' }, body);
   mount(outlet, root);
 
   let tree;
-  let preseeding: PreseedingLo[];
+  let preseeding: Array<Pick<PreseedingLo, 'loId' | 'approved'>>;
   let materials: Material[];
   try {
-    [tree, preseeding, materials] = await Promise.all([getCourseTree(courseId), getPreseeding(courseId), listMaterials(courseId)]);
+    [tree, preseeding, materials] = await Promise.all([
+      readOnly ? getCourseOutline(courseId) : getCourseTree(courseId),
+      readOnly ? getCourseContentMap(courseId).then(map => map.themes.flatMap(theme =>
+        theme.los.map(lo => ({ loId: lo.loId, approved: lo.questionCounts.approved })))) : getPreseeding(courseId),
+      listMaterials(courseId),
+    ]);
   } catch (error) {
     const message = error instanceof ApiError ? error.message : (error as Error).message;
-    body.replaceChildren(errorState(message, () => void renderStructureInner(outlet, courseId)));
+    body.replaceChildren(errorState(message, () => void renderStructureInner(outlet, courseId, readOnly)));
     return;
   }
 
@@ -178,12 +185,12 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
 
   const layout = el('div', { class: 'structure-layout' });
   const actionNotice = el('div', { class: 'structure-action-notice', role: 'status' });
-  const header = pageHeader('Course Structure', 'Turn your materials into a clear, teachable outline.');
+  const header = pageHeader('Course Structure', readOnly ? 'Browse topics, learning objectives and supporting materials.' : 'Turn your materials into a clear, teachable outline.');
   // Coverage Map lives under Course Structure rather than in the sidebar.
-  header.append(el('a', { class: 'btn btn--ghost', href: `#/instructor/course/${encodeURIComponent(courseId)}/content-map`, text: 'Coverage Map →' }));
+  header.append(el('a', { class: 'btn btn--ghost', href: `#/${readOnly ? 'ta' : 'instructor'}/course/${encodeURIComponent(courseId)}/content-map`, text: 'Coverage Map →' }));
   body.replaceChildren(header, actionNotice, layout);
-  const assistant = createStructureAssistant(courseId, materials, refresh, async (notice) => {
-    assistant.dispose();
+  const assistant = readOnly ? null : createStructureAssistant(courseId, materials, refresh, async (notice) => {
+    assistant?.dispose();
     await renderStructureInner(outlet, courseId);
     const nextNotice = outlet.querySelector<HTMLElement>('.structure-action-notice');
     if (notice && nextNotice) nextNotice.textContent = notice;
@@ -354,21 +361,21 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       el('button', { type: 'button', class: primary ? 'btn btn--instr-primary' : 'btn btn--ghost', onclick }, text);
     const count = themes.reduce((n, t) => n + (t.los?.length ?? 0), 0);
     const tabs = el('nav', { class: 'structure-view-tabs', 'aria-label': 'Structure views' },
-      el('button', { type: 'button', class: assistant.isOpen ? 'is-active' : '', 'aria-pressed': String(assistant.isOpen), onclick: () => assistant.open() }, 'AI draft'),
-      el('button', { type: 'button', class: assistant.isOpen ? '' : 'is-active', 'aria-pressed': String(!assistant.isOpen), onclick: () => assistant.close() }, `Course outline · ${count}`));
+      assistant && el('button', { type: 'button', class: assistant.isOpen ? 'is-active' : '', 'aria-pressed': String(assistant.isOpen), onclick: () => assistant.open() }, 'AI draft'),
+      el('button', { type: 'button', class: assistant?.isOpen ? '' : 'is-active', 'aria-pressed': String(!assistant?.isOpen), onclick: () => assistant?.close() }, `Course outline · ${count}`));
     const actions = el('div', { class: 'structure-view-bar' }, tabs, el('div', { class: 'structure-view-actions' },
-      !assistant.isOpen && themes.length > 0 && button(showAll ? 'Topic view' : 'All objectives', () => { showAll = !showAll; openLo = ''; refresh(); }),
-      button('+ Add manually', () => { addingTheme = true; assistant.close(); })));
+      !assistant?.isOpen && themes.length > 0 && button(showAll ? 'Topic view' : 'All objectives', () => { showAll = !showAll; openLo = ''; refresh(); }),
+      assistant && button('+ Add manually', () => { addingTheme = true; assistant.close(); })));
     const shell = el('div', { class: 'outline-shell' }, actions);
     if (treeErrorMessage) shell.append(errorState(treeErrorMessage));
     if (addingTheme) shell.append(addNameForm({ placeholder: 'Topic name', existingNames: themes.map(t => t.name), onAdd: handleAddTheme, onCancel: () => { addingTheme = false; refresh(); } }));
-    if (assistant.isOpen) { shell.append(assistant.element); return shell; }
+    if (assistant?.isOpen) { shell.append(assistant.element); return shell; }
     if (!themes.length) {
       shell.append(el('div', { class: 'structure-saved-empty' },
         el('span', { class: 'structure-ai-eyebrow', text: 'YOUR COURSE OUTLINE' }),
-        el('h2', { text: 'Make space for what students will learn.' }),
-        el('p', { text: 'Build a draft from your materials, or add your first topic manually.' }),
-        button('Build with AI →', () => assistant.open(), true)));
+        el('h2', { text: readOnly ? 'No topics yet' : 'Make space for what students will learn.' }),
+        !readOnly && el('p', { text: 'Build a draft from your materials, or add your first topic manually.' }),
+        assistant && button('Build with AI →', () => assistant.open(), true)));
       return shell;
     }
     const nav = el('aside', { class: 'outline-topics', 'aria-label': 'Topics' },
@@ -388,7 +395,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         button('+ Add Topic', () => { addingTheme = true; refresh(); }, true)));
       return shell;
     }
-    const topicActions = !showAll ? el('div', { class: 'outline-topic-actions' },
+    const topicActions = !readOnly && !showAll ? el('div', { class: 'outline-topic-actions' },
       button('Topic settings', () => openEditor({ type: 'theme', id: current._id })),
       deleteButton({ type: 'theme', id: current._id })) : undefined;
     const results = el('div', { class: 'outline-objectives' });
@@ -401,7 +408,7 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         if (!los.length) continue;
         const section = el('section', { class: 'outline-group' });
         if (showAll || search) section.append(el('div', { class: 'outline-group-heading' },
-          el('h3', { text: t.name }), deleteButton({ type: 'theme', id: t._id })));
+          el('h3', { text: t.name }), !readOnly && deleteButton({ type: 'theme', id: t._id })));
         section.append(el('div', { class: 'outline-columns' }, el('span', { text: 'LEARNING OBJECTIVE' }), el('span', { text: 'MATERIALS · APPROVED' })));
         for (const lo of los) {
           const assigned = materials.filter(m => m.assignments.some(a => a.themeId === t._id && a.loId === lo._id));
@@ -412,8 +419,12 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
             el('span', { class: 'outline-number', text: `${themes.indexOf(t) + 1}.${(t.los ?? []).indexOf(lo) + 1}` }),
             el('span', { class: 'outline-lo-name', text: lo.name }),
             el('small', { text: `${assigned.length} materials · ${approved} approved` }), el('span', { 'aria-hidden': 'true', text: openLo === lo._id ? '−' : '+' })),
-            deleteButton({ type: 'lo', id: lo._id })));
-          if (openLo === lo._id) {
+            !readOnly && deleteButton({ type: 'lo', id: lo._id })));
+          if (openLo === lo._id && readOnly) {
+            row.append(el('div', { class: 'outline-lo-editor' },
+              el('p', { text: assigned.length ? assigned.map(m => m.name).join(' · ') : 'No supporting materials linked yet.' }),
+              assigned.length > 0 && el('a', { href: `#/ta/course/${encodeURIComponent(courseId)}/materials?materialId=${encodeURIComponent(assigned[0]._id)}`, text: 'Open supporting materials →' })));
+          } else if (openLo === lo._id) {
             const name = el('textarea', { class: 'input', 'aria-label': 'Learning objective', text: lo.name }) as HTMLTextAreaElement;
             const errors = el('div');
             row.append(el('div', { class: 'outline-lo-editor' }, name,
@@ -430,9 +441,9 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
         results.append(section);
       }
       if (!results.childElementCount) results.append(el('div', { class: 'outline-empty' },
-        el('h2', { text: search ? 'No matching objectives' : 'Give this topic a purpose' }),
-        el('p', { text: search ? 'Try a different search or clear your filters.' : 'Add what students should know or be able to do.' }),
-        button(search ? 'Clear search' : '+ Add objectives', () => {
+        el('h2', { text: search ? 'No matching objectives' : readOnly ? 'No learning objectives yet' : 'Give this topic a purpose' }),
+        (!readOnly || !!search) && el('p', { text: search ? 'Try a different search or clear your filters.' : 'Add what students should know or be able to do.' }),
+        (!readOnly || !!search) && button(search ? 'Clear search' : '+ Add objectives', () => {
           if (search) { search = ''; input.value = ''; drawResults(); }
           else { addingLoForTheme = current!._id; refresh(); }
         })));
@@ -443,8 +454,8 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
       el('small', { text: showAll ? 'COURSE OUTLINE' : `TOPIC ${themes.indexOf(current) + 1}` }),
       el('div', {}, el('h2', { text: showAll ? 'The complete learning journey' : current.name }),
         topicActions ?? false),
-      el('p', { text: 'What should students be able to do after this topic?' }), !showAll && themeAvailabilityPill(current.availableFrom)),
-      el('div', { class: 'outline-tools' }, input, button('+ Add objectives', () => { addingLoForTheme = current._id; refresh(); })));
+      el('p', { text: 'What should students be able to do after this topic?' }), !readOnly && !showAll && themeAvailabilityPill(current.availableFrom)),
+      el('div', { class: 'outline-tools' }, input, !readOnly && button('+ Add objectives', () => { addingLoForTheme = current._id; refresh(); })));
     if (addingLoForTheme) {
       const target = findTheme(addingLoForTheme);
       if (target) {
@@ -466,7 +477,8 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
           }, true), button('Cancel', () => { addingLoForTheme = null; refresh(); })));
       }
     }
-    content.append(results, el('footer', { class: 'outline-content-footer', text: 'Click an objective to edit it, or Delete to remove it. Materials & settings includes question kind and source links.' }));
+    content.append(results);
+    if (!readOnly) content.append(el('footer', { class: 'outline-content-footer', text: 'Click an objective to edit it, or Delete to remove it. Materials & settings includes question kind and source links.' }));
     drawResults();
     return shell;
   }
@@ -694,13 +706,13 @@ async function renderStructureInner(outlet: HTMLElement, courseId: string): Prom
     );
   }
 
-  if (!themes.length) assistant.open(); else refresh();
-  attachTutorial(root, 'instructor-structure', {
+  if (!themes.length && assistant) assistant.open(); else refresh();
+  if (!readOnly) attachTutorial(root, 'instructor-structure', {
     'structure-views': '.structure-view-tabs',
     'structure-outline': '.structure-layout',
   });
 }
 
-export function renderStructure(outlet: HTMLElement, params: RouteParams): void {
-  void renderStructureInner(outlet, params.id);
+export function renderStructure(outlet: HTMLElement, params: RouteParams, readOnly = false): void {
+  void renderStructureInner(outlet, params.id, readOnly);
 }

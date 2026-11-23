@@ -214,3 +214,17 @@ it('settles malformed JSON provider successes independently and continues chargi
   expect(budget.snapshot()).toMatchObject({ observedSends: 2, admissionTokens: 26, settledSends: 2, usageCompleteness: 'complete' });
   expect(sendMessage).toHaveBeenCalledTimes(2);
 });
+
+it('lets one budget raise its estimated ceiling above the general default, and only that budget', () => {
+  expect(defaultAuthoringLimits().maxEstimatedTokens).toBe(2_000_000);
+  expect(defaultAuthoringLimits({}, 4_064_000).maxEstimatedTokens).toBe(4_064_000);
+  // An explicit override still only lowers the limit.
+  expect(defaultAuthoringLimits({ maxEstimatedTokens: 9_000_000 }, 4_064_000).maxEstimatedTokens).toBe(4_064_000);
+  const structure = new AuthoringBudget('course', {}, undefined, { maxEstimatedTokensCeiling: 4_064_000 });
+  expect(structure.snapshot().limits.maxEstimatedTokens).toBe(4_064_000);
+  expect(new AuthoringBudget('course').snapshot().limits.maxEstimatedTokens).toBe(2_000_000);
+  // Admission now continues past the old 2M wall.
+  const send = (prompt: string): ModelSendAdmission => ({ prompt, provider: 'ollama', model: 'synthetic-model', options: {}, outputCap: 24_000, jsonAttempt: 0 });
+  for (let i = 0; i < 90; i++) structure.reserve(send('x'.repeat(20_000)));
+  expect(structure.snapshot().admissionTokens).toBeGreaterThan(2_000_000);
+});

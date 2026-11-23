@@ -199,9 +199,12 @@ real Instructor permission projection while keeping TA-only action surfaces.
 TA Student Analytics reuses the Instructor read models under TA routes; its
 sidebar entry follows `analytics.view`, while named profiles and exam scores
 require `analytics.individual`. The TA view does not link to Instructor-only
-routes for course settings or content mutations. TA course-content pages use
-course-scoped GET routes for Course Home, Materials, Structure, Coverage Map
-and Question Bank; the Bank still requires `question.review`.
+routes for course settings or content mutations. TA Course Dashboard uses the
+Instructor dashboard layout with teaching-member data. Course Materials, Course
+Structure, Coverage Map and Questions share the Instructor renderers with
+TA controls and course-scoped reads. Coverage Map is under Course Structure.
+Questions replaces the old TA Bank and Review Queue. Student flags appears there
+with `flag.triage`, including a flags-only view without `question.review`.
 
 Admin accounts use a compact black sidebar in both appearance modes with an explicit Admin brand
 and platform navigation. `admin-console.css` supplies shared dense workspaces,

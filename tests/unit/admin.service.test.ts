@@ -217,6 +217,7 @@ describe('Phase 3 Admin essentials', () => {
         reviewer: { model: 'gpt-5.4-nano' },
         masteryEvaluator: { model: 'gpt-5.4-nano' },
         utility: { model: 'gpt-5.4-nano' },
+        outlineOrganizer: { model: 'gpt-5.4-nano' },
       },
       costControls: { maxGenerationsPerDay: 10 },
       featureFlags: { layer2Evaluator: true, generationRepair: true },
@@ -237,8 +238,14 @@ describe('Phase 3 Admin essentials', () => {
     const legacy = { ...defaultPlatformSettings(), models: { ...defaultPlatformSettings().models, validator: { model: 'old', modelSource: 'override' } },
       featureFlags: { reviewerAgent: false, layer2Evaluator: true, retryOnReject: true } } as never;
     const normalized = normalizePlatformSettings(legacy);
-    expect(Object.keys(normalized.models).sort()).toEqual(['generator', 'masteryEvaluator', 'reviewer', 'utility']);
+    expect(Object.keys(normalized.models).sort()).toEqual(['generator', 'masteryEvaluator', 'outlineOrganizer', 'reviewer', 'utility']);
     expect(normalized.featureFlags).toEqual({ layer2Evaluator: true, generationRepair: true });
+  });
+  it('gives settings saved before the Outline organizer existed its environment default', () => {
+    const { outlineOrganizer: _absent, ...older } = defaultPlatformSettings().models; void _absent;
+    const normalized = normalizePlatformSettings({ ...defaultPlatformSettings(), models: { ...older, utility: { model: 'gpt-6-luna', modelSource: 'override' } } } as never);
+    expect(normalized.models.outlineOrganizer).toEqual(expect.objectContaining({ model: defaultPlatformSettings().models.outlineOrganizer.model, modelSource: 'environment' }));
+    expect(normalized.models.utility).toEqual({ model: 'gpt-6-luna', modelSource: 'override' });
   });
 });
 

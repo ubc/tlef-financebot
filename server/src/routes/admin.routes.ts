@@ -73,6 +73,7 @@ const platformSettingsBody = z.object({
     reviewer: stepModelConfig,
     masteryEvaluator: stepModelConfig,
     utility: stepModelConfig,
+    outlineOrganizer: stepModelConfig,
   }),
   customModels: z.array(z.object({
     id: z.string().trim().min(1),
@@ -89,7 +90,7 @@ const modelChoice = z.string().trim().min(1).max(250).optional();
 const courseModelBody = z.object({
   revision: z.number().int().nonnegative().safe(),
   overrides: z.object({
-    generator: modelChoice, reviewer: modelChoice, utility: modelChoice,
+    generator: modelChoice, reviewer: modelChoice, utility: modelChoice, outlineOrganizer: modelChoice, masteryEvaluator: modelChoice,
   }).strict(),
 });
 

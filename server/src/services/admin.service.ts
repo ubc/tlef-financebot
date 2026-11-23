@@ -13,9 +13,12 @@ import {
 } from '../components/mongodb/collections';
 import {
   CAPABILITY_PROFILES,
+  KNOWN_MODELS,
+  capabilitiesFor,
   capabilitiesForConfigured,
   modelCatalogue,
   temperatureAllowed,
+  type CapabilityProfile,
 } from '../components/genai/llm/model-capabilities';
 import { env } from '../config/env';
 import {
@@ -424,6 +427,7 @@ export function defaultPlatformSettings(): PlatformSettings {
       reviewer: { model: env.llmModelReviewer, modelSource: 'environment' },
       masteryEvaluator: { model: env.llmModelMasteryEvaluator, modelSource: 'environment' },
       utility: { model: env.llmDefaultModel, modelSource: 'environment' },
+      outlineOrganizer: { model: env.llmModelOutlineOrganizer, modelSource: 'environment' },
     },
     customModels: [],
     costControls: { maxGenerationsPerDay: 1000 },
@@ -530,17 +534,46 @@ function courseModelView(platform: PlatformSettings, stored?: CourseModelSetting
   };
 }
 
+/**
+ * Models a course instructor may choose: the built-in supported models and the
+ * server's environment defaults. Admin-registered custom models are never
+ * offered (developer decision, 2026-11-23); instructors cannot type a model.
+ */
+export function instructorSelectableModels(): Array<{ id: string; profile: CapabilityProfile }> {
+  const ids = [...new Set([...Object.keys(KNOWN_MODELS), ...Object.values(defaultPlatformSettings().models).map(config => (config.model ?? '').trim())])].filter(Boolean);
+  return ids.map(id => ({ id, profile: capabilitiesFor(id).profile }));
+}
+
 export async function getAdminCourseModels(courseId: ObjectId) {
   const [platform, course] = await Promise.all([readPlatformSettings(), readCourseModelSettings(courseId)]);
   if (!course) throw new Error('course-not-found');
   return courseModelView(platform, course.llmModelSettings);
 }
 
+/** The same shared per-course setting, as a course instructor sees it. */
+export async function getInstructorCourseModels(courseId: ObjectId) {
+  const view = await getAdminCourseModels(courseId);
+  const { availableModels: _admin, ...rest } = view; void _admin;
+  return { ...rest, selectableModels: instructorSelectableModels() };
+}
+
+export async function saveInstructorCourseModels(courseId: ObjectId, revision: number, choices: CourseModelChoices, actorPuid: string) {
+  const { availableModels: _admin, ...rest } = await saveCourseModels(courseId, revision, choices, actorPuid, 'instructor'); void _admin;
+  return { ...rest, selectableModels: instructorSelectableModels() };
+}
+
 export async function saveAdminCourseModels(courseId: ObjectId, revision: number, choices: CourseModelChoices, actorPuid: string) {
+  return saveCourseModels(courseId, revision, choices, actorPuid, 'admin');
+}
+
+async function saveCourseModels(courseId: ObjectId, revision: number, choices: CourseModelChoices, actorPuid: string, scope: 'admin' | 'instructor') {
   const [platform, course] = await Promise.all([readPlatformSettings(), readCourseModelSettings(courseId)]);
   if (!course) throw new Error('course-not-found');
   if (revision !== (course.llmModelSettings?.revision ?? 0)) throw new Error('course-models-conflict');
   const previous = courseModelView(platform, course.llmModelSettings);
+  // An unchanged existing choice (even an Admin-assigned custom model) is kept;
+  // a new instructor choice must come from the built-in supported list.
+  const allowed = scope === 'admin' ? previous.availableModels : instructorSelectableModels().map(entry => entry.id);
   const overrides: CourseModelSettings['overrides'] = {};
   for (const step of COURSE_MODEL_STEPS) {
     const model = choices[step];
@@ -550,8 +583,8 @@ export async function saveAdminCourseModels(courseId: ObjectId, revision: number
       overrides[step] = existing;
       continue;
     }
-    if (!previous.availableModels.includes(model)) throw new Error('invalid-model-selector');
-    const custom = platform.customModels?.find(entry => entry.id === model);
+    if (!allowed.includes(model)) throw new Error('invalid-model-selector');
+    const custom = scope === 'admin' ? platform.customModels?.find(entry => entry.id === model) : undefined;
     overrides[step] = { model, ...(custom ? { capabilityProfile: custom.profile } : {}) };
   }
   const stored = { revision: revision + 1, overrides };
@@ -563,7 +596,7 @@ export async function saveAdminCourseModels(courseId: ObjectId, revision: number
   const view = courseModelView(platform, stored);
   await auditCol().insertOne({
     actorPuid, action: 'course-models.update', targetType: 'course', targetId: courseId, courseId,
-    detail: { before: previous.overrides, after: view.overrides, revision: stored.revision },
+    detail: { before: previous.overrides, after: view.overrides, revision: stored.revision, scope },
     createdAt: new Date(),
   });
   return view;
@@ -577,6 +610,16 @@ export async function saveAdminCourseModels(courseId: ObjectId, revision: number
  */
 export async function utilityStepConfig(courseId?: ObjectId): Promise<StepModelConfig> {
   return (await getPlatformSettings(courseId)).models.utility;
+}
+
+/**
+ * The model for the single call that writes the final course outline (topics
+ * and LOs). Split from Utility on 2026-11-23 so a stronger model can do this
+ * one judgment-heavy call (~20k input tokens) while material reading, batch
+ * synthesis and source review — ~95% of a structure run's tokens — stay cheap.
+ */
+export async function outlineOrganizerStepConfig(courseId?: ObjectId): Promise<StepModelConfig> {
+  return (await getPlatformSettings(courseId)).models.outlineOrganizer;
 }
 
 /**

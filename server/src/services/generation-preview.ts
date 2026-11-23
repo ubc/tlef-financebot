@@ -45,7 +45,10 @@ export function partialVisibleJson(json: string): Record<string, unknown> | unde
   return root;
 }
 
-export function partialQuestion(json: string): Omit<NonNullable<QuestionGenerationRun['preview']>, 'item' | 'attempt'> {
+type GenerationPreview = NonNullable<QuestionGenerationRun['preview']>;
+export type QuestionPreview = Omit<GenerationPreview, 'item' | 'attempt'>;
+
+export function partialQuestion(json: string): QuestionPreview {
   const root = partialVisibleJson(json);
   const bounded = (field: unknown, max = 4000) => typeof field === 'string' ? field.slice(0,max) : '';
   const options = Array.isArray(root?.options) ? root.options.slice(0,8).filter(item => item && typeof item === 'object' && !Array.isArray(item)).map(item => ({
@@ -76,9 +79,21 @@ function readString(text: string, start: number): { value: string; end: number; 
   return { value: value.replace(/[\uD800-\uDBFF]$/, ''), end: text.length, closed: false };
 }
 
-/** Coalesce provider fragments to at most four durable writes per second.
- * Every write is serialized and drained before the caller advances its stage. */
-export async function withGenerationPreview<T>(runId: ObjectId, item: number, generate: (onText: (text: string) => void) => Promise<T>, writePreview?: (preview: QuestionGenerationRun['preview']) => Promise<unknown>): Promise<T> {
+export function withGenerationPreview<T>(
+  runId: ObjectId,
+  item: number,
+  generate: (onText: (text: string) => void) => Promise<T>,
+  writePreview: (preview: QuestionGenerationRun['preview']) => Promise<unknown> = (preview) => updateContentRun(runId, { preview }),
+): Promise<T> {
+  return withQuestionPreview(item, generate, writePreview);
+}
+
+/** Coalesce provider fragments and drain serialized snapshots before completion. */
+export async function withQuestionPreview<T>(
+  item: number,
+  generate: (onText: (text: string) => void) => Promise<T>,
+  writePreview: (preview: GenerationPreview) => Promise<unknown>,
+): Promise<T> {
   let attempt = 0;
   let lastContent = '';
   let pending: QuestionGenerationRun['preview'];
@@ -88,7 +103,7 @@ export async function withGenerationPreview<T>(runId: ObjectId, item: number, ge
   const flush = () => {
     const next = pending; pending = undefined;
     if (!next || failure) return;
-    writing = writing.then(async () => { if (!failure) { if (writePreview) await writePreview(next); else await updateContentRun(runId, { preview: next }); } }).catch(error => { failure = error; });
+    writing = writing.then(async () => { if (!failure) await writePreview(next); }).catch(error => { failure = error; });
   };
   const onText = (text: string) => {
     if (failure) return;

@@ -4,6 +4,7 @@ import {
   assignMaterial,
   getCourseKnowledgeGraph,
   getCourseTree,
+  getCourseOutline,
   getMaterialWorkspaceDetail,
   listContentRuns,
   listMaterials,
@@ -37,7 +38,7 @@ import { el, mount } from '../../dom.js';
 import { uploadZone } from '../../instructor-ui.js';
 import { confirmDialog } from '../../modal.js';
 import { errorState, loadingState } from '../../ui.js';
-import type { RouteParams } from '../../router.js';
+import { currentQuery, type RouteParams } from '../../router.js';
 import { assignmentSummary, classificationLabel } from './material-assign.js';
 
 const INGEST_STAGES = ['queued', 'parsing', 'chunking', 'embedding', 'indexing', 'classifying'] as const;
@@ -68,7 +69,7 @@ export function materialErrorMessage(message: string): string {
 }
 
 function buildAssignChecklist(
-  tree: CourseTree,
+  tree: Pick<CourseTree, 'themes'>,
   initial: MaterialAssignment[],
 ): { element: HTMLElement; getSelected: () => MaterialAssignment[] } {
   const key = (themeId: string, loId: string): string => `${themeId}:${loId}`;
@@ -106,22 +107,22 @@ function confidencePercent(value: number | undefined): string {
   return `${Math.round((value ?? 0) * 100)}%`;
 }
 
-async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Promise<void> {
+async function renderMaterialsInner(outlet: HTMLElement, courseId: string, readOnly: boolean): Promise<void> {
   const body = el('div', {}, loadingState('Opening course knowledge workspace…'));
   const root = el('div', { class: 'view view--knowledge-workspace' }, body);
   mount(outlet, root);
 
-  let tree: CourseTree;
+  let tree: Pick<CourseTree, 'themes'> & { course: { name: string } };
   let materials: Material[];
   let trash: Material[];
   let recentRuns: ContentRunSummary[];
   let graph: CourseKnowledgeGraph;
   try {
     [tree, materials, trash, recentRuns, graph] = await Promise.all([
-      getCourseTree(courseId),
+      readOnly ? getCourseOutline(courseId) : getCourseTree(courseId),
       listMaterials(courseId),
-      listTrashedMaterials(courseId),
-      listContentRuns(courseId, { kind: 'material-ingest', limit: 30 }),
+      readOnly ? [] : listTrashedMaterials(courseId),
+      readOnly ? [] : listContentRuns(courseId, { kind: 'material-ingest', limit: 30 }),
       getCourseKnowledgeGraph(courseId),
     ]);
   } catch (error) {
@@ -131,7 +132,8 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
 
   let fileMode: 'files' | 'review' | 'trash' = 'files';
   let rightTab: 'preview' | 'chunks' | 'metadata' | 'graph' = 'preview';
-  let selectedId = materials[0]?._id ?? trash[0]?._id;
+  const requestedSource = currentQuery().get('materialId');
+  let selectedId = materials.find(material => material._id === requestedSource)?._id ?? materials[0]?._id ?? trash[0]?._id;
   let detail: MaterialWorkspaceDetail | undefined;
   let detailLoading = false;
   let detailRevision = 0;
@@ -147,7 +149,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   let sourceBatch: MaterialUploadBatch | undefined;
   let sourceReport: SourceSelectionReport | undefined;
   let uploadRequest: { key: string; id: string } | undefined;
-  try { sourceBatchId = sessionStorage.getItem(batchStorageKey) ?? undefined; } catch { /* The receipt remains on the server. */ }
+  if (!readOnly) try { sourceBatchId = sessionStorage.getItem(batchStorageKey) ?? undefined; } catch { /* The receipt remains on the server. */ }
   const runs = new Map(recentRuns.map((run) => [run._id, run]));
   const refreshedTerminalRuns = new Set<string>();
   const assistantMessages: Array<{ role: 'assistant' | 'user'; text: string; action?: { label: string; run: () => void } }> = [
@@ -424,7 +426,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
             ? el('span', { class: 'workspace-file__auto', title: 'Auto-assigned', text: '✓' })
             : false,
       ),
-      el(
+      !readOnly && el(
         'button',
         {
           class: `workspace-file__action${material.deletedAt ? ' workspace-file__action--restore' : ''}`,
@@ -446,7 +448,14 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
       : fileMode === 'review'
         ? materials.filter((material) => material.automation?.assignment?.status === 'needs-review' || material.classificationSuggestion)
         : materials;
-    const visible = source.filter((material) => material.name.toLowerCase().includes(fileSearch.toLowerCase()));
+    const files = el('div', { class: 'workspace-file-list' });
+    const drawFiles = (): void => {
+      const visible = source.filter((material) => material.name.toLowerCase().includes(fileSearch.toLowerCase()));
+      mount(files, ...visible.map(fileCard), !visible.length && el('p', {
+        class: 'workspace-empty', text: fileSearch ? 'No matching sources.' : fileMode === 'review' ? 'Nothing needs review.' : 'No sources here.',
+      }));
+    };
+    drawFiles();
     const urlInput = el('input', { class: 'input input--sm', type: 'url', 'aria-label': 'Add a public material URL', placeholder: 'Add a public URL…' }) as HTMLInputElement;
     return el(
       'section',
@@ -457,18 +466,18 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         el('div', {}, el('p', { class: 'workspace-eyebrow', text: 'KNOWLEDGE BASE' }), el('h2', { text: 'Sources' })),
         el('span', { class: 'workspace-count', text: String(materials.length) }),
       ),
-      uploadZone('Drop files here or browse', (files) => void doUpload(files)),
-      el('a', { class: 'btn btn--secondary', href: `#/instructor/canvas/${courseId}`, text: 'Import from Canvas' }),
-      el('div', { class: 'workspace-url' }, urlInput, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: pendingActions.has('add-url') ? 'disabled' : undefined, busy: pendingActions.has('add-url'), onclick: () => runMaterialAction('add-url', () => doAddUrl(urlInput)) }, '+')),
+      !readOnly && uploadZone('Drop files here or browse', (files) => void doUpload(files)),
+      !readOnly && el('a', { class: 'btn btn--secondary', href: `#/instructor/canvas/${courseId}`, text: 'Import from Canvas' }),
+      !readOnly && el('div', { class: 'workspace-url' }, urlInput, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: pendingActions.has('add-url') ? 'disabled' : undefined, busy: pendingActions.has('add-url'), onclick: () => runMaterialAction('add-url', () => doAddUrl(urlInput)) }, '+')),
       el('input', {
         class: 'input input--sm workspace-search',
         type: 'search',
         'aria-label': 'Search course sources',
         value: fileSearch,
         placeholder: 'Search sources…',
-        oninput: (event: Event) => { fileSearch = (event.target as HTMLInputElement).value; refresh(); },
+        oninput: (event: Event) => { fileSearch = (event.target as HTMLInputElement).value; drawFiles(); },
       }),
-      el(
+      !readOnly && el(
         'div',
         { class: 'workspace-file-tabs', role: 'tablist' },
         ...(['files', 'review', 'trash'] as const).map((mode) =>
@@ -482,9 +491,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
           }),
         ),
       ),
-      el('div', { class: 'workspace-file-list' },
-        ...(visible.length ? visible.map(fileCard) : [el('p', { class: 'workspace-empty', text: fileMode === 'review' ? 'Nothing needs review.' : 'No sources here.' })]),
-      ),
+      files,
     );
   }
 
@@ -601,7 +608,26 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         target: '_blank', rel: 'noopener', text: `PDF p. ${span.physicalPage}` })));
   }
 
+  function conceptPanel(loaded: MaterialWorkspaceDetail | undefined): HTMLElement {
+    return el(
+        'div',
+        { class: 'workspace-metadata-block' },
+        el('h3', { text: `Concepts (${loaded?.material.knowledgeConcepts?.length ?? 0})` }),
+        ...(loaded?.material.knowledgeConcepts?.length
+          ? loaded.material.knowledgeConcepts.map((concept) => el('article', { class: 'workspace-concept' }, el('div', { class: 'row row--between' }, el('strong', { text: concept.name }), el('span', { text: confidencePercent(concept.confidence) })), concept.description ? el('p', { text: concept.description }) : false, concept.evidence ? el('blockquote', { text: concept.evidence }) : false))
+          : [el('p', { class: 'workspace-empty', text: 'Concepts appear after AI classification completes.' })]),
+      );
+  }
+
   function metadataPanel(material: Material, loaded: MaterialWorkspaceDetail | undefined): HTMLElement {
+    if (readOnly) return el('div', { class: 'workspace-inspector__content' },
+      material.format === 'pdf' ? sourceReceipt(material, loaded) : false,
+      el('div', { class: 'workspace-metadata-block' },
+        el('h3', { text: 'Material type' }), el('p', { text: material.kind ?? 'other' })),
+      el('div', { class: 'workspace-metadata-block' },
+        el('h3', { text: 'LO coverage' }), el('p', { text: assignmentSummary(material, tree) })),
+      conceptPanel(loaded));
+
     let draft = metadataDrafts.get(material._id);
     if (!draft || (!draft.kindDirty && !draft.assignmentsDirty && draft.revision !== (material.revision ?? 0))) {
       draft = { revision: material.revision ?? 0, kind: material.kind ?? 'other', assignments: material.assignments.map(a => ({ ...a })), kindDirty: false, assignmentsDirty: false };
@@ -674,14 +700,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         : false,
       el('label', { class: 'form-field' }, el('span', { text: 'Material type' }), el('div', { class: 'row' }, kindSelect, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: pendingActions.has(kindKey) ? 'disabled' : undefined, busy: pendingActions.has(kindKey), onclick: () => runMaterialAction(kindKey, () => saveKind()) }, pendingActions.has(kindKey) ? 'Saving…' : 'Save'))),
       el('div', { class: 'workspace-metadata-block' }, el('h3', { text: 'LO coverage' }), el('p', { class: 'workspace-muted', text: assignmentSummary(material, tree) }), checklist.element, el('button', { class: 'btn btn--ghost btn--sm', type: 'button', disabled: pendingActions.has(assignmentsKey) ? 'disabled' : undefined, busy: pendingActions.has(assignmentsKey), onclick: () => runMaterialAction(assignmentsKey, () => saveAssignments()) }, pendingActions.has(assignmentsKey) ? 'Saving assignments…' : 'Save assignments')),
-      el(
-        'div',
-        { class: 'workspace-metadata-block' },
-        el('h3', { text: `Concepts (${loaded?.material.knowledgeConcepts?.length ?? 0})` }),
-        ...(loaded?.material.knowledgeConcepts?.length
-          ? loaded.material.knowledgeConcepts.map((concept) => el('article', { class: 'workspace-concept' }, el('div', { class: 'row row--between' }, el('strong', { text: concept.name }), el('span', { text: confidencePercent(concept.confidence) })), concept.description ? el('p', { text: concept.description }) : false, concept.evidence ? el('blockquote', { text: concept.evidence }) : false))
-          : [el('p', { class: 'workspace-empty', text: 'Concepts appear after AI classification completes.' })]),
-      ),
+      conceptPanel(loaded),
     );
   }
 
@@ -825,7 +844,7 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
         previewHeading(material),
         canEmbed && !material.deletedAt ? el('iframe', { class: 'workspace-preview__frame', src: materialSourceUrl(courseId, material._id, undefined, 'embedded-preview'), title: `Preview ${material.name}` }) : el('pre', { class: 'workspace-preview__text', text: detail?.material.excerpt || 'No text preview is available.' }),
         material.deletedAt ? el('p', { class: 'workspace-deleted-note', text: 'This source is in Trash. Existing questions keep their provenance, but the source no longer grounds generation.' }) : false,
-        previewActions(material),
+        !readOnly && previewActions(material),
       );
     }
     return el(
@@ -840,17 +859,18 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     if (!root.isConnected) return;
     const inspector = inspectorPanel();
     if (!workspace) {
-      workspace = el('div', { class: 'knowledge-workspace' }, leftPanel(), assistantPanel(), inspector);
+      workspace = el('div', { class: `knowledge-workspace${readOnly ? ' knowledge-workspace--read-only' : ''}` },
+        leftPanel(), !readOnly && assistantPanel(), inspector);
       body.replaceChildren(el('div', { class: 'knowledge-workspace-shell' },
-        el('div', { class: 'knowledge-workspace__title' }, el('div', {}, el('p', { class: 'workspace-eyebrow', text: tree.course.name }), el('h1', { text: 'Course Knowledge Workspace' }), el('p', { text: 'Upload once. AI organizes the evidence; you intervene only when judgment is needed.' }))),
+        el('div', { class: 'knowledge-workspace__title' }, el('div', {}, el('p', { class: 'workspace-eyebrow', text: tree.course.name }), el('h1', { text: 'Course Knowledge Workspace' }), el('p', { text: readOnly ? 'Browse course sources, extracted chunks and learning objective coverage.' : 'Upload once. AI organizes the evidence; you intervene only when judgment is needed.' }))),
         feedback, workspace));
     } else {
       workspace.children[0].replaceWith(leftPanel());
-      workspace.children[1].replaceWith(assistantPanel());
+      if (!readOnly) workspace.children[1].replaceWith(assistantPanel());
       if (inspector !== currentInspector) currentInspector?.replaceWith(inspector);
     }
     currentInspector = inspector;
-    attachTutorial(root, 'instructor-materials', {"materials-files": ".knowledge-workspace__files", "materials-inspector": ".knowledge-workspace__inspector"});
+    if (!readOnly) attachTutorial(root, 'instructor-materials', {"materials-files": ".knowledge-workspace__files", "materials-inspector": ".knowledge-workspace__inspector"});
   }
 
   async function applyRunUpdate(run: ContentRunSummary, source: 'snapshot' | 'live'): Promise<void> {
@@ -877,6 +897,12 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
     refresh();
   }
 
+  if (readOnly) {
+    refresh();
+    if (selectedId) void loadDetail(selectedId);
+    return;
+  }
+
   const closeStream = subscribeContentRuns(courseId, {
     onSnapshot: (snapshot) => { for (const run of snapshot) void applyRunUpdate(run, 'snapshot'); },
     onRun: (run) => void applyRunUpdate(run, 'live'),
@@ -898,6 +924,6 @@ async function renderMaterialsInner(outlet: HTMLElement, courseId: string): Prom
   if (selectedId) void loadDetail(selectedId);
 }
 
-export function renderMaterials(outlet: HTMLElement, params: RouteParams): void {
-  void renderMaterialsInner(outlet, params.id);
+export function renderMaterials(outlet: HTMLElement, params: RouteParams, readOnly = false): void {
+  void renderMaterialsInner(outlet, params.id, readOnly);
 }

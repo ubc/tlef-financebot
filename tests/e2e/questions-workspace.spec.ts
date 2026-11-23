@@ -135,17 +135,15 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
     const url = new URL(r.request().url());
     const path = url.pathname;
     const method = r.request().method();
-    if (options.withUsage && path === '/api/courses/course/content-runs/r0/usage') {
-      return r.fulfill({ json: {
-        summary: { untracked: false, coverageGaps: 0 },
-        totalCalls: 4,
-        calls: [
-          { item: 0, stage: 'generation', requestedModel: 'generator', usage: { inputTokens: 100, outputTokens: 25, totalTokens: 125 } },
-          { item: 0, stage: 'check', requestedModel: 'checker', usage: { inputTokens: 50, outputTokens: 5, totalTokens: 55 } },
-          { item: 1, stage: 'generation', requestedModel: 'generator', usage: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 } },
-          { item: 1, stage: 'check', requestedModel: 'checker', usage: { inputTokens: null, outputTokens: null, totalTokens: null } },
-        ],
-      } });
+    if (options.withUsage && /^\/api\/questions\/q[12]\/generation-usage$/.test(path)) {
+      const first = path.includes('/q1/');
+      const summary = (inputTokens: number, outputTokens: number, partial: boolean, estimatedUsd: number) => ({
+        inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, reportedCalls: 1, status: partial ? 'partial' : 'complete',
+        cost: { estimatedUsd, unpricedCalls: Number(partial), models: [{ provider: 'openai', model: 'gpt-6-luna', tokens: inputTokens + outputTokens, estimatedUsd, unpricedCalls: Number(partial) }] },
+      });
+      return r.fulfill({ json: { original: { runId: 'r0', wholeTask: false, partial: !first,
+        summary: first ? summary(150, 30, false, 0.000030) : summary(600, 400, true, 0.000260) },
+      alternatives: first ? null : summary(90, 10, false, 0.000014), alternativesPartial: false } });
     }
     if (path === '/api/courses/course/question-workspace') return r.fulfill({ json: workspace(url.searchParams.get('tab') ?? 'review') });
     if (path === '/api/courses/course/instructor-workflow') {
@@ -236,7 +234,7 @@ async function setup(page: Page, options: { coursePublished?: boolean; tab?: str
       const parameterized = !!question.current.paramSlots;
       const fill = (text: string) => text.replace('{{F}}', String(2 * sampleCalls)).replace('{{A_WRONG}}', String(4 * sampleCalls)).replace('{{A}}', String(sampleCalls));
       const current = question.current as unknown as { stem: string; options: Array<{ key: string; text: string; explanation: string }> };
-      return r.fulfill({ json: { stem: fill(current.stem), options: current.options.map((o) => ({ key: o.key, text: fill(o.text), explanation: o.explanation })), parameterized } });
+      return r.fulfill({ json: { versionId: question.currentVersionId, stem: fill(current.stem), options: current.options.map((o) => ({ key: o.key, text: fill(o.text), explanation: o.explanation })), parameterized } });
     }
     if (/^\/api\/questions\/q\d+\/params\/preview$/.test(path)) {
       const body = r.request().postDataJSON();
@@ -410,11 +408,12 @@ test('bulk partial failure lists the failures and keeps them selected', async ({
   await expect(tabCount(page, 'To review')).toHaveText('1');
 });
 
-test('releasing a Topic clears the hidden-questions warning', async ({ page }) => {
-  const mock = await setup(page, { tab: 'approved' });
-  await expect(page.locator('.questions-release-bar')).toContainText('1 approved question is not visible to students yet.');
-  await expect(page.locator('.questions-reader__visibility').first()).toBeVisible();
-  await page.locator('.questions-release-bar').getByRole('link', { name: 'Manage releases' }).click();
+test('releasing a Topic updates the selected question’s visibility', async ({ page }) => {
+  const mock = await setup(page, { tab: 'approved', extraHash: '&q=q6' });
+  await expect(page.locator('.questions-header + .questions-tabs')).toBeVisible();
+  const visibility = page.locator('.questions-reader__visibility');
+  await expect(visibility).toContainText('Motion is not released.');
+  await visibility.getByRole('button', { name: 'Manage releases' }).click();
   await expect(page.getByRole('heading', { name: 'Release & Publish' })).toBeVisible();
   await expect(page.getByText('3 of 5 launch checks complete')).toBeVisible();
   const row = page.locator('.questions-release__row', { hasText: 'Motion' });
@@ -426,16 +425,15 @@ test('releasing a Topic clears the hidden-questions warning', async ({ page }) =
   await expect(page.getByRole('status').filter({ hasText: 'Release settings saved for 1 topic.' })).toBeVisible();
   await expect(page.getByText('4 of 5 launch checks complete')).toBeVisible();
   await page.goBack();
-  await expect(page.locator('.questions-release-bar')).toContainText('All 2 approved questions are visible to students.');
+  await expect(visibility).toContainText('Visible to students.');
   expect(mock.themeCalls).toEqual([{ id: 'motion', body: expect.objectContaining({ expectedRevision: 4 }) }]);
 });
 
 test('publishing keeps launch details compact and updates course visibility', async ({ page }) => {
   const mock = await setup(page, { coursePublished: false, tab: 'approved' });
-  const bar = page.locator('.questions-release-bar');
-  await expect(bar).toContainText('The course is not published — students see no questions.');
-  await expect(page.locator('.questions-reader__visibility')).toContainText('the course is not published');
-  await bar.getByRole('link', { name: 'Open publishing checklist →' }).click();
+  const visibility = page.locator('.questions-reader__visibility');
+  await expect(visibility).toContainText('the course is not published');
+  await visibility.getByRole('link', { name: 'Open publishing checklist →' }).click();
   const details = page.getByText('Combine forces to find net force, Describe motion with and without acceleration.', { exact: true });
   await expect(details).toBeHidden();
   await page.getByText('2 learning objectives have fewer than 3 approved questions').click();
@@ -478,6 +476,49 @@ test('paused questions resume and archived questions restore to review', async (
   expect(mock.questions[7].state).toBe('draft');
 });
 
+test('compact filters keep active choices visible and let users clear them independently of search', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setup(page, { tab: 'approved' });
+  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+  const toolbar = page.locator('.questions-toolbar');
+  const toggle = toolbar.getByRole('button', { name: 'Filters', exact: true });
+  const panel = toolbar.getByRole('group', { name: 'Question filters' });
+  const rows = page.locator('.questions-list__rows > li');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel).toBeHidden();
+  await toggle.press('Enter');
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole('combobox')).toHaveCount(6);
+  await panel.getByRole('combobox', { name: 'Topic', exact: true }).selectOption('motion');
+  const objectives = panel.getByRole('combobox', { name: 'Learning objective' });
+  await expect(objectives.locator('option')).toHaveText(['All objectives', 'Describe motion']);
+  await objectives.selectOption('lo-motion');
+  await expect(objectives).toBeFocused();
+  await expect(rows).toHaveCount(1);
+  await expect(toggle).toHaveAccessibleDescription('2 active filters');
+  await toggle.press('Space');
+  await expect(panel).toBeHidden();
+  await toolbar.getByRole('button', { name: /Remove learning objective filter/ }).click();
+  await expect(toggle).toHaveAccessibleDescription('1 active filter');
+  await expect(toggle).toBeFocused();
+
+  const search = toolbar.getByRole('searchbox', { name: 'Search questions' });
+  await search.fill('Question 6:');
+  await toolbar.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(search).toHaveValue('Question 6:');
+  await expect(rows).toHaveCount(1);
+  await toggle.click();
+  await panel.getByRole('combobox', { name: 'Student visibility' }).selectOption('visible');
+  await expect(page.getByRole('heading', { name: 'No matching questions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Clear search and filters' }).click();
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('');
+  await expect(rows).toHaveCount(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const results = await new AxeBuilder({ page }).include('.questions-toolbar').analyze();
+  expect(results.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+});
+
 test('390px dark layout stacks list and reader without horizontal scroll, and passes axe', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await setup(page, { tab: 'approved' });
@@ -504,14 +545,45 @@ test('generation tokens belong to the selected question, including partial recei
   await setup(page, { withUsage: true });
   const usage = page.getByRole('region', { name: 'Generation tokens' });
   await expect(usage.locator('.mu-totals dd')).toHaveText(['150', '30', '180']);
+  await expect(usage).toContainText('$0.00003');
   await expect(usage.getByRole('link', { name: 'View generation task' }))
     .toHaveAttribute('href', '#/instructor/course/course/preseeding?runId=r0');
   await page.locator('[data-question-id="q2"] .questions-row__open').click();
-  await expect(usage.locator('.mu-totals dd')).toHaveText(['600', '400', '1,000']);
+  await expect(usage.locator('.mu-totals dd')).toHaveText(['600', '400', '1,000', '90', '10', '100']);
   await expect(usage).toContainText('Partial usage');
+  await expect(usage).toContainText('Alternative generation');
+  await expect(usage).toContainText('$0.000014');
 });
 
 const modeButton = (page: Page, name: string) => page.getByRole('group', { name: 'Reader mode' }).getByRole('button', { name, exact: true });
+
+test('Preview lets the instructor answer using the student options and reveals feedback on submit', async ({ page }) => {
+  const attempts: string[] = [];
+  page.on('request', request => { if (new URL(request.url()).pathname.endsWith('/attempts')) attempts.push(request.method()); });
+  const mock = await setup(page);
+  await modeButton(page, 'Preview').click();
+  const preview = page.getByRole('region', { name: 'Student preview' });
+  const options = preview.locator('.learning-option');
+  const submit = preview.getByRole('button', { name: 'Submit', exact: true });
+  await expect(submit).toBeDisabled();
+  await expect(preview).not.toContainText('Add the vectors.');
+  await expect(preview.locator('.learning-option.is-correct')).toHaveCount(0);
+  await options.first().click();
+  await expect(options.first()).toHaveAttribute('aria-pressed', 'true');
+  await expect(preview).not.toContainText('Only equal forces cancel.');
+  await submit.click();
+  await expect(preview.getByRole('status')).toContainText('Incorrect.');
+  await expect(preview.locator('.learning-option.is-correct')).toContainText('Add the vectors.');
+  await preview.getByRole('button', { name: 'Try again' }).click();
+  await expect(submit).toBeDisabled();
+  await expect(preview).not.toContainText('Add the vectors.');
+  await options.last().click();
+  await submit.click();
+  await expect(preview.getByRole('status')).toHaveText('Correct.');
+  expect(mock.sampleCalls()).toBe(1);
+  expect(mock.patchCalls).toEqual([]);
+  expect(attempts).toEqual([]);
+});
 
 test('reader modes: leaving Edit asks first, Preview is kept in the URL, another question opens in Read', async ({ page }) => {
   const mock = await setup(page, { tab: 'review', extraHash: '&q=q2&mode=preview' });
@@ -713,9 +785,8 @@ test('Compare generates an alternative beside the current version and replaces i
   await expect(page.getByRole('region', { name: 'Check of the generated alternative' })).toContainText('Name the direction.');
   expect(mock.regenerateCalls).toEqual([{ prompt: expect.stringContaining('distinct alternative') }]);
 
-  // Leaving with an unsaved alternative asks first.
-  await modeButton(page, 'Read').click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.locator('.questions-reader__actions button')).toHaveText(['Cancel', 'Replace with variant']);
+  await expect(modeButton(page, 'Read')).toBeDisabled();
   await expect(modeButton(page, 'Compare')).toHaveAttribute('aria-pressed', 'true');
 
   await page.getByRole('button', { name: 'Replace with variant' }).click();
@@ -725,10 +796,116 @@ test('Compare generates an alternative beside the current version and replaces i
   await expect(page.locator('.questions-reader__context')).toBeVisible();
 });
 
+test('Compare resumes its stream after switching questions and keeps the decision until Cancel', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 720 });
+  const mock = await setup(page);
+  await page.evaluate(() => {
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (!String(input).endsWith('/regenerate')) return realFetch(input, init);
+      if (new Headers(init?.headers).get('Accept') !== 'text/event-stream') throw new Error('SSE was not requested');
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const push = (event: Event): void => {
+            const chunk = (event as CustomEvent<string>).detail;
+            if (chunk) controller.enqueue(encoder.encode(chunk));
+            else {
+              window.removeEventListener('test-regeneration-chunk', push);
+              controller.close();
+            }
+          };
+          window.addEventListener('test-regeneration-chunk', push);
+          controller.enqueue(encoder.encode('event: progress\r\ndata: {"stage":"generating"}\r\n\r\n'));
+        },
+      });
+      return Promise.resolve(new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }));
+    };
+  });
+  const send = (chunk: string) => page.evaluate((detail) => {
+    window.dispatchEvent(new CustomEvent('test-regeneration-chunk', { detail }));
+  }, chunk);
+
+  await modeButton(page, 'Compare').click();
+  await page.getByRole('button', { name: 'Generate alternative', exact: true }).click();
+  const alternative = page.getByRole('article', { name: 'Generated alternative' });
+  const status = alternative.getByRole('status');
+  await expect(status).toHaveText('Writing the alternative…');
+  await expect(status).toBeInViewport();
+  const current = page.getByRole('article', { name: 'Current · version 1' });
+  expect((await alternative.boundingBox())!.x).toBeGreaterThan((await current.boundingBox())!.x);
+  await send(': heartbeat\r\n\r\nevent: preview\r\ndata: {"stem":"A draft');
+  await expect(alternative).not.toContainText('A draft');
+  await send(' on friction","options":[{"key":"A","text":"First choice","explanation":""}]}\r\n\r\n');
+  await expect(alternative.getByText('A draft on friction')).toBeInViewport();
+  await expect(alternative).toContainText('First choice');
+  await expect(page.getByRole('button', { name: 'Replace with variant' })).toHaveCount(0);
+  await expect(modeButton(page, 'Read')).toBeDisabled();
+
+  const open = (id: string) => page.locator(`[data-question-id="${id}"] .questions-row__open`).click();
+  await open('q2');
+  await expect(page.locator('.questions-reader__stem')).toContainText('Question 2:');
+  await expect(modeButton(page, 'Read')).toBeEnabled();
+  await send('event: preview\ndata: {"stem":"The stream continued in the background"}\n\n');
+  await open('q1');
+  await expect(modeButton(page, 'Compare')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => page.evaluate(() => location.hash)).toContain('mode=compare');
+  await expect(alternative.getByText('The stream continued in the background')).toBeInViewport();
+
+  await send('');
+  await expect(alternative.getByRole('alert')).toContainText('Live generation was interrupted.');
+  await expect(alternative).not.toContainText('The stream continued in the background');
+  await alternative.getByRole('button', { name: 'Try again' }).click();
+  await expect(status).toHaveText('Writing the alternative…');
+  await send('event: preview\ndata: {"stem":"Second draft"}\n\n');
+  await expect(alternative).toContainText('Second draft');
+  await send('event: progress\ndata: {"stage":"reviewing"}\n\n');
+  await expect(status).toHaveText('Checking the alternative…');
+  await expect(alternative).toContainText('Second draft');
+  await open('q2');
+  await expect(page.locator('.questions-reader__stem')).toContainText('Question 2:');
+  const variant = { stem: 'Checked variant', difficulty: 'easy', options: [], sourceRefs: [], agentDecision: { decision: 'pass', reasoning: 'Checked', roleAssessment: 'OK' } };
+  await send(`event: result\ndata: ${JSON.stringify({ variant })}\n\n`);
+  await expect(page.locator('.questions-reader__stem')).toContainText('Question 2:');
+  await open('q1');
+  await expect(alternative).toContainText('Checked variant');
+  const footer = page.locator('.questions-reader__actions');
+  await expect(footer.getByRole('button')).toHaveText(['Cancel', 'Replace with variant']);
+  await expect(status).toBeHidden();
+  await footer.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(modeButton(page, 'Read')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.questions-reader__stem')).toContainText('Question 1:');
+  await expect(footer.getByRole('button')).toHaveText(['Reload', 'Reject', 'Approve']);
+  expect(mock.patchCalls).toEqual([]);
+  expect(mock.transitionCalls).toEqual([]);
+});
+
 test('Compare is offered only for questions in To review', async ({ page }) => {
   await setup(page, { tab: 'approved' });
   await expect(modeButton(page, 'Preview')).toBeVisible();
   await expect(modeButton(page, 'Compare')).toHaveCount(0);
+});
+
+test('a resumed comparison cannot replace a version saved while viewing another question', async ({ page }) => {
+  const mock = await setup(page);
+  await modeButton(page, 'Compare').click();
+  await page.getByRole('button', { name: 'Generate alternative' }).click();
+  const replace = page.getByRole('button', { name: 'Replace with variant' });
+  await expect(replace).toBeEnabled();
+  await page.locator('[data-question-id="q2"] .questions-row__open').click();
+  await expect(page.locator('.questions-reader__stem')).toContainText('Question 2:');
+
+  const question = mock.questions[0];
+  question.currentVersionId = 'v1-colleague';
+  question.currentVersion = 2;
+  question.current = { ...question.current, _id: 'v1-colleague', version: 2, stem: 'A colleague’s new version' };
+  await page.locator('[data-question-id="q1"] .questions-row__open').click();
+  await expect(modeButton(page, 'Compare')).toHaveAttribute('aria-pressed', 'true');
+  await expect(replace).toBeDisabled();
+  await expect(page.getByRole('alert')).toContainText('The saved version changed.');
+  await page.locator('.questions-reader__actions').getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.locator('.questions-reader__stem')).toContainText('A colleague’s new version');
+  expect(mock.patchCalls).toEqual([]);
 });
 
 test('a question opened from Student Analytics shows its recorded version until dismissed', async ({ page }) => {

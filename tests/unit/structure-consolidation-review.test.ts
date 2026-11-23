@@ -349,7 +349,8 @@ describe('explicit-ID consolidation fresh review layer (scripted, no durable aut
     plan.draft.childContext.sources[0]!.text += ' Caller mutation.';
     expect(input).toEqual(original); expect(prepareConsolidationReview(input).draft.childContext.sources[0]!.text).toBe(original.parentContext.sources[0]!.text);
     expect(outlineConsolidationReviewProtocolHash()).toMatch(/^[a-f0-9]{64}$/);
+    // Pin updated 2026-11-23: a final-attempt review failure withholds that objective, not the run.
     expect(createHash('sha256').update(readFileSync('server/src/services/structure-outline-grounding.ts')).digest('hex'))
-      .toBe('a6f9fa23f3b7b35c9f2dd52a85303953f9e4e3917c59356fdd0ef1c1e6acf366');
+      .toBe('d37cc238119a47f998b714454a7266ec7b2db1ebbd9fb2bf1dfe9123e82f1b0f');
   });
 });

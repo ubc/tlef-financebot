@@ -4,6 +4,7 @@ import { modelCallReceiptsCol, modelUsageSessionsCol } from '../components/mongo
 import { withModelCallObserver, type ModelCallObserver } from '../components/genai/llm/model-call';
 import type { ModelUsage } from '../components/genai/llm/provider-usage';
 import type { ModelCallReceipt, ModelUsageFilters, ModelUsageScope, ModelUsageSession, ModelUsageSummary, ModelUsageTotals } from '../types/model-usage';
+import { estimateModelCost } from './model-cost';
 
 const FIELDS = ['inputTokens', 'outputTokens', 'totalTokens', 'reasoningTokens', 'cachedInputTokens', 'cacheWriteTokens'] as const;
 const READ_LIMIT = 10000;
@@ -164,7 +165,8 @@ export function summarizeReceipts(receipts: ModelCallReceipt[], sessions: ModelU
   const missing = new Set(sessions.flatMap(session => options.checkExpected === false ? [] : session.expectedCallIds.filter(id => !ids.has(id))));
   const open = sessions.some(session => !session.closedCleanly && now - new Date(session.startedAt).getTime() < STALE_AFTER_MS);
   const broken = sessions.filter(session => session.recordingFailed || !session.closedCleanly && now - new Date(session.startedAt).getTime() >= STALE_AFTER_MS).length;
-  const orphaned = unique.some(call => !sessions.some(session => session._id === call.trackingSessionId));
+  const sessionIds = new Set(sessions.map(session => session._id));
+  const orphaned = unique.some(call => !sessionIds.has(call.trackingSessionId));
   const untracked = sessions.length === 0;
   const gaps = missing.size + broken + Number(Boolean(options.truncated)) + Number(orphaned) + (options.recordingCoverageGaps ?? 0);
   data.observedCalls += missing.size;
@@ -178,7 +180,12 @@ export function summarizeReceipts(receipts: ModelCallReceipt[], sessions: ModelU
   else if (open || data.pendingCalls) status = 'pending';
   const group = (key: (call: ModelCallReceipt) => string) => {
     const map = new Map<string, ModelCallReceipt[]>();
-    for (const call of unique) { const id = key(call); map.set(id, [...(map.get(id) ?? []), call]); }
+    for (const call of unique) {
+      const id = key(call);
+      const group = map.get(id);
+      if (group) group.push(call);
+      else map.set(id, [call]);
+    }
     return map;
   };
   return { ...data, status, scope: 'llm-calls', coverageGaps: gaps, untracked,
@@ -196,7 +203,8 @@ function faultCoverage(filters: ModelUsageFilters, sessions: ModelUsageSession[]
   let gaps = 0;
   for (const fault of recordingFaults.values()) {
     if (filters.actor && fault.scope.actor?.puid !== filters.actor || filters.courseId && fault.scope.courseId !== filters.courseId
-      || filters.runId && fault.scope.runId !== filters.runId || filters.operationId && fault.scope.operationId !== filters.operationId) continue;
+      || filters.runId && fault.scope.runId !== filters.runId || filters.operationId && fault.scope.operationId !== filters.operationId
+      || filters.operationIds && !filters.operationIds.includes(fault.scope.operationId ?? '')) continue;
     if (!overlaps(fault.startedAt, fault.lastFailureAt, filters)) continue;
     if (!sessions.some(session => session._id === fault.sessionId && session.recordingFailed)) gaps++;
   }
@@ -210,12 +218,12 @@ function filterFor(filters: ModelUsageFilters): Filter<ModelCallReceipt> {
     ...(filters.actor ? { 'actor.puid': filters.actor } : {}),
     ...(filters.courseId ? { courseId: new ObjectId(filters.courseId) } : {}),
     ...(filters.runId ? { runId: filters.runId } : {}),
-    ...(filters.operationId ? { operationId: filters.operationId } : {}),
+    ...(filters.operationId ? { operationId: filters.operationId } : filters.operationIds ? { operationId: { $in: filters.operationIds } } : {}),
     ...(filters.from || filters.until ? { startedAt: { ...(filters.from ? { $gte: new Date(filters.from) } : {}), ...(filters.until ? { $lte: new Date(filters.until) } : {}) } } : {}),
   };
 }
 
-export async function summarizeModelUsage(filters: ModelUsageFilters): Promise<ModelUsageSummary> {
+export async function readModelUsage(filters: ModelUsageFilters) {
   const filter = filterFor(filters);
   const [observedReceipts, observedSessions] = await Promise.all([
     modelCallReceiptsCol().find(filter).sort({ startedAt: -1, _id: -1 }).limit(READ_LIMIT + 1).toArray(),
@@ -230,7 +238,8 @@ export async function summarizeModelUsage(filters: ModelUsageFilters): Promise<M
     const linked = await modelUsageSessionsCol().find({ ...identityFilters, _id: { $in: linkedIds } }).limit(READ_LIMIT + 1).toArray();
     for (const session of linked.slice(0, READ_LIMIT)) sessionsById.set(session._id, session);
   }
-  let sessions = [...sessionsById.values()];
+  const fullSessions = [...sessionsById.values()];
+  let sessions = fullSessions;
   let expectedTruncated = false;
   if (filters.from || filters.until) {
     const knownCalls = new Map(receipts.map(call => [call._id, call]));
@@ -254,10 +263,17 @@ export async function summarizeModelUsage(filters: ModelUsageFilters): Promise<M
       return !call || call.trackingSessionId !== session._id || overlaps(new Date(call.startedAt), new Date(call.startedAt), filters);
     }) }));
   }
-  return summarizeReceipts(receipts, sessions, {
-    truncated: observedReceipts.length > READ_LIMIT || observedSessions.length > READ_LIMIT || expectedTruncated,
+  const truncated = observedReceipts.length > READ_LIMIT || observedSessions.length > READ_LIMIT || expectedTruncated;
+  const summary = summarizeReceipts(receipts, sessions, {
+    truncated,
     recordingCoverageGaps: faultCoverage(filters, sessions),
   });
+  return { receipts, sessions, fullSessions, summary, truncated };
+}
+
+export async function summarizeModelUsage(filters: ModelUsageFilters): Promise<ModelUsageSummary> {
+  const { receipts, summary } = await readModelUsage(filters);
+  return { ...summary, cost: estimateModelCost(receipts) };
 }
 
 export async function listModelCalls(filters: ModelUsageFilters) {

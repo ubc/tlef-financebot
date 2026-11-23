@@ -1,13 +1,11 @@
 // In-app notification bell (§4.3, §9.1) — Task 3. A persistent top-bar
 // widget: one instance is built into each shell's `topbar__right` (see
 // main.ts's buildInstructorShell/buildStudentShell), so unlike a per-view
-// widget it must keep polling ACROSS navigations, only stopping when the
-// shell itself is torn down (logout, or a 401 re-bootstrap replacing the
-// whole app root). Follows the same self-teardown-via-isConnected pattern as
-// views/instructor/materials.ts's poll loop, just checked against this
-// widget's own wrapper element instead of a per-view root.
+// widget it keeps polling across navigations until the shell is detached or
+// the API reports that its session is no longer authorized.
 import { el, mount } from './dom.js';
 import {
+  ApiError,
   listNotifications,
   markAllNotificationsRead,
   dismissNotification,
@@ -65,7 +63,7 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
 
   let notifications: AppNotification[] = [];
   let open = false;
-  let intervalId: ReturnType<typeof setInterval> | undefined;
+  let stopped = false;
   const unsubscribeNotificationsChanged = subscribeNotificationsChanged(() => void poll('notification-sync'));
   // Monotonic counter bumped by every LOCAL mutation of `notifications`
   // (activate/dismiss, "clear all", mark-panel-read) before that handler's
@@ -216,13 +214,10 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
     toggle();
   });
 
-  // Click-outside closes the panel. Self-tears-down the moment `wrap` is no
-  // longer attached (shell rebuilt on logout / 401 re-bootstrap) instead of
-  // requiring an explicit unmount hook, mirroring the poll loop's own
-  // isConnected self-teardown below.
+  // Click-outside closes the panel and cleans up detached bells.
   function onDocumentClick(e: MouseEvent): void {
     if (!wrap.isConnected) {
-      removeGlobalListeners();
+      stopPolling();
       return;
     }
     if (open && !wrap.contains(e.target as Node)) {
@@ -237,7 +232,10 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
   }
   function refreshOnFocus(): void { if (document.visibilityState === 'visible') void poll('notification-focus'); }
 
-  function removeGlobalListeners(): void {
+  function stopPolling(): void {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(intervalId);
     document.removeEventListener('click', onDocumentClick);
     document.removeEventListener('visibilitychange', refreshWhenVisible);
     window.removeEventListener('focus', refreshOnFocus);
@@ -251,12 +249,9 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
   window.addEventListener('focus', refreshOnFocus);
 
   async function poll(trigger: RequestTrigger): Promise<void> {
+    if (stopped) return;
     if (!wrap.isConnected) {
-      if (intervalId !== undefined) {
-        clearInterval(intervalId);
-        intervalId = undefined;
-      }
-      removeGlobalListeners();
+      stopPolling();
       return;
     }
     const epoch = mutationEpoch;
@@ -265,16 +260,21 @@ export function createNotificationBell(audience: NotificationAudience): HTMLElem
       // A local mutation started after this GET went out, so this response
       // predates it and cannot be trusted to reflect it (see `mutationEpoch`).
       // Drop it; the next poll carries the post-mutation epoch and reconciles.
-      if (epoch !== mutationEpoch) return;
+      if (stopped || !wrap.isConnected || epoch !== mutationEpoch) return;
       notifications = fetched;
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        stopPolling();
+        return;
+      }
       // Transient failure -- keep the last known list and try again next tick.
     }
+    if (stopped || !wrap.isConnected) return;
     syncBadge();
     if (open) renderPanel();
   }
 
-  intervalId = setInterval(() => void poll('notification-timer'), POLL_INTERVAL_MS);
+  const intervalId = setInterval(() => void poll('notification-timer'), POLL_INTERVAL_MS);
   // Shell builders call createNotificationBell() while constructing the
   // topbar, before that topbar is appended to the document. Calling poll()
   // synchronously here made its `!wrap.isConnected` teardown branch cancel

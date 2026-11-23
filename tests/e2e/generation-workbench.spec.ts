@@ -1,12 +1,21 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-async function fixture(page: Page, scenario: 'ready' | 'empty' | 'sources' = 'ready') {
+async function fixture(page: Page, scenario: 'ready' | 'empty' | 'sources' | 'large-batch' = 'ready') {
   const calls: Array<{ cells: Array<{ count: number; kind: string; type: string }>; submissionId: string; prompt: string; qualityPolicy?: string }> = [];
   const runs: Array<Record<string, unknown>> = [];
   const questions: Array<Record<string, unknown>> = [];
   let fail = false;
   const submissions = new Map<string,string>();
+  const objectives = scenario === 'large-batch'
+    ? Array.from({ length: 109 }, (_, index) => ({
+      _id: `lo-${index + 1}`, name: `Objective ${index + 1}`, order: index + 1, kind: 'conceptual',
+    }))
+    : [
+      { _id: 'a', name: 'Define force as a vector interaction', order: 1, kind: 'conceptual' },
+      { _id: 'b', name: 'Combine forces to find net force', order: 2, kind: 'mixed' },
+      { _id: 'c', name: 'Calculate weight using W = mg', order: 3, kind: 'calculation' },
+    ];
   await page.addInitScript(() => {
     class MockSource extends EventTarget {
       static sources: MockSource[] = [];
@@ -19,9 +28,14 @@ async function fixture(page: Page, scenario: 'ready' | 'empty' | 'sources' = 're
   await page.route('**/generation-fixture', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="en"><head><title>Generation</title><link rel="stylesheet" href="/styles/main.css"><link rel="stylesheet" href="/vendor/katex.min.css"><script src="/vendor/katex.min.js"></script><script src="/vendor/katex-auto-render.min.js"></script><script src="/vendor/marked.min.js"></script><script src="/vendor/purify.min.js"></script></head><body><main></main></body></html>' }));
   await page.route('**/api/**', async r => {
     const url = new URL(r.request().url()); const path = url.pathname;
-    if (path === '/api/courses/course') return r.fulfill({ json: { course: { _id: 'course' }, themes: scenario === 'empty' ? [] : [{ _id: 'topic', name: 'Forces and vectors', order: 1, los: [ { _id: 'a', name: 'Define force as a vector interaction', order: 1, kind: 'conceptual' }, { _id: 'b', name: 'Combine forces to find net force', order: 2, kind: 'mixed' }, { _id: 'c', name: 'Calculate weight using W = mg', order: 3, kind: 'calculation' } ] }] } });
+    if (path === '/api/courses/course') return r.fulfill({ json: { course: { _id: 'course' }, themes: scenario === 'empty' ? [] : [{ _id: 'topic', name: 'Forces and vectors', order: 1, los: objectives }] } });
     if (path.endsWith('/preseeding')) return r.fulfill({ json: [{ loId: 'a', approved: 1, unapproved: 0, target: 5 }, { loId: 'b', approved: 0, unapproved: 5, target: 5 }, { loId: 'c', approved: 0, unapproved: 0, target: 5 }] });
-    if (path.endsWith('/materials')) return r.fulfill({ json: scenario === 'sources' ? [] : [{ _id: 'm', name: 'Week 3 lecture notes.pdf', status: 'ready', assignments: [{ themeId: 'topic', loId: 'a' }, { themeId: 'topic', loId: 'b' }] }] });
+    if (path.endsWith('/materials')) {
+      const assignments = scenario === 'large-batch'
+        ? [{ themeId: 'topic' }]
+        : [{ themeId: 'topic', loId: 'a' }, { themeId: 'topic', loId: 'b' }];
+      return r.fulfill({ json: scenario === 'sources' ? [] : [{ _id: 'm', name: 'Week 3 lecture notes.pdf', status: 'ready', assignments }] });
+    }
     if (path.endsWith('/generation-plan')) {
       const body = r.request().postDataJSON(); calls.push(body);
       if (!submissions.has(body.submissionId)) submissions.set(body.submissionId, submissions.size ? `batch${submissions.size}-` : 'r');
@@ -44,14 +58,58 @@ async function fixture(page: Page, scenario: 'ready' | 'empty' | 'sources' = 're
     if (path === '/api/questions/q') return r.fulfill({ json: { ...questions[0], currentVersionId: 'v', agentDecision: { decision: 'flag', reasoning: 'The answer needs a clearer assumption about equal magnitudes.' } } });
     return r.fulfill({ json: {} });
   });
-  async function open() {
+  async function open(search = '') {
     await page.goto('/generation-fixture');
-    await page.evaluate(async () => { const { renderPreseeding } = await import('/js/views/instructor/preseeding.js'); renderPreseeding(document.querySelector('main')!, { id: 'course' }); });
+    await page.evaluate(async route => {
+      history.replaceState(null, '', '#/instructor/course/course/preseeding' + route);
+      const { startRouter } = await import('/js/router.js');
+      const { renderGenerationWorkbench } = await import('/js/views/instructor/generation-workbench.js');
+      startRouter({
+        routes: [{ path: '/instructor/course/:id/preseeding', render: (outlet, { id }) => renderGenerationWorkbench(outlet, id) }],
+        outlet: document.querySelector('main')!,
+        fallback: '/instructor/course/course/preseeding',
+      });
+    }, search);
     await expect(page.getByRole('heading', { name: 'Generate questions', exact: true })).toBeVisible();
   }
   await open();
   return { calls, runs, questions, open, fail: (value: boolean) => { fail = value; } };
 }
+
+test('old advanced links open the main generator with their objective and question type', async ({ page }) => {
+  const state = await fixture(page);
+  await state.open('?advanced=1&loId=b&type=true-false');
+  await expect(page).toHaveURL(/\/preseeding\?loId=b&type=true-false$/);
+  await expect(page.getByRole('checkbox', { name: /Combine forces/ })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /Define force/ })).not.toBeChecked();
+  await expect(page.getByLabel('Question type')).toHaveValue('true-false');
+  await expect(page.getByText('More control', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Question Bank Coverage' })).toHaveCount(0);
+});
+
+test('Generation activity retries a failed task and opens the new run', async ({ page }) => {
+  const state = await fixture(page);
+  const run = {
+    _id: 'failed-run', courseId: 'course', kind: 'question-generation', input: { loId: 'a', count: 1 },
+    status: 'failed', stage: 'generating', revision: 1, completedUnits: 1, totalUnits: 1,
+    createdAt: new Date().toISOString(), result: { createdQuestionIds: [], failures: [] },
+    error: { code: 'generation-no-questions-created', message: 'No drafts were saved.' },
+  };
+  state.runs.push(run);
+  let retryCalls = 0;
+  await page.route('**/content-runs/failed-run/retry', r => {
+    retryCalls++;
+    state.runs.push({ ...run, _id: 'retried-run', status: 'queued', stage: 'queued', completedUnits: 0, error: undefined });
+    return r.fulfill({ status: 202, json: { runId: 'retried-run' } });
+  });
+  await state.open('?runId=failed-run');
+  await expect(page.getByText('Manage runs & retries', { exact: false })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Retry task', exact: true }).click();
+  await expect(page).toHaveURL(/\/preseeding\?runId=retried-run$/);
+  await expect(page.locator('.gw-run[data-run-id="retried-run"]')).toContainText('Waiting to start');
+  expect(retryCalls).toBe(1);
+  expect(state.calls).toEqual([]);
+});
 
 test('focused selection excludes covered and ungrounded objectives; exact batch and prompt', async ({ page }) => {
   const state = await fixture(page);
@@ -68,6 +126,37 @@ test('focused selection excludes covered and ungrounded objectives; exact batch 
   expect(state.calls[0].qualityPolicy).toBeUndefined();
   await page.getByRole('button', { name: 'Create a batch', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Generation in progress', exact: true })).toBeDisabled();
+});
+
+test('oversized batches explain the 200-question limit beside Generate and clear at the limit', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const state = await fixture(page, 'large-batch');
+  const footer = page.locator('.gw-footer');
+  const alert = footer.getByRole('alert');
+  const generate = footer.getByRole('button', { name: /^Generate / });
+  await expect(generate).toHaveText('Generate 218 questions →');
+  await expect(generate).toBeDisabled();
+  await expect(alert).toBeInViewport();
+  await expect(alert).toHaveText('This batch has 218 questions. The limit is 200 per batch. Select fewer objectives or reduce the questions per objective.');
+  await expect(generate).toHaveAccessibleDescription(/The limit is 200 per batch/);
+
+  const prompt = page.getByLabel('Instructions · optional');
+  await prompt.fill('Use everyday scenarios.');
+  for (let index = 101; index <= 109; index++) {
+    await page.getByRole('checkbox', { name: new RegExp(`^Objective ${index} `) }).uncheck();
+  }
+  await expect(generate).toHaveText('Generate 200 questions →');
+  await expect(generate).toBeEnabled();
+  await expect(alert).toBeEmpty();
+  await expect(prompt).toHaveValue('Use everyday scenarios.');
+
+  await page.getByRole('button', { name: 'More questions per objective' }).click();
+  await expect(alert).toContainText('This batch has 300 questions.');
+  await expect(generate).toBeDisabled();
+  await page.getByRole('button', { name: 'Fewer questions per objective' }).click();
+  await expect(generate).toBeEnabled();
+  await expect(alert).toBeEmpty();
+  expect(state.calls).toEqual([]);
 });
 
 test('single-question batch uses singular labels', async ({ page }) => {

@@ -1,7 +1,7 @@
 import { attachTutorial } from '../../tutorials.js';
 import {
   browseBank, endContentRun, enqueueGenerationPlan, getContentRun, getContentRunUsage, getCourseTree, getPreseeding,
-  getQuestion, listContentRuns, listMaterials, subscribeContentRuns,
+  getQuestion, listContentRuns, listMaterials, retryContentRun, subscribeContentRuns,
   type BankQuestion, type ContentRunSummary, type ContentRunSnapshot, type CourseTreeLo, type GenerationPlanCell, type GenerationQualityAssessment, type QuestionGenerationRun, type ModelUsageSnapshot,
 } from '../../api.js';
 import { getSession } from '../../auth.js';
@@ -17,9 +17,15 @@ import { exactBankChecks } from './exact-bank-checks.js';
 import { taskRetrievalChecks } from './task-retrieval-checks.js';
 import { authoringAnswer } from './authoring-answer.js';
 
+/** Matches the server's PLAN_MAX_QUESTIONS (2026-11-23: raised from 120 cells to 200 questions). */
+const BATCH_MAX_QUESTIONS = 200;
+
 type Tier = 'easy' | 'medium' | 'hard';
 type Submission = { submissionId: string; cells: GenerationPlanCell[]; prompt: string; runIds?: string[]; errors?: string[] };
 const active = (run: ContentRunSummary) => run.status === 'running' || run.status === 'queued';
+const canRetry = (run: QuestionGenerationRun) => (run.status === 'failed' || run.status === 'partial')
+  && run.error?.code !== 'generation-no-assigned-materials'
+  && run.error?.message.split(':')[0] !== 'generation-no-assigned-materials';
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const stageName = (stage: string) => ({ queued: 'Waiting to start', retrieving: 'Finding source evidence', generating: 'Writing questions', validating: 'Checking answers', reviewing: 'Reviewing quality', persisting: 'Saving drafts', completed: 'Completed' })[stage] ?? stage.replace(/-/g, ' ');
 const callStageName = (stage: string) => ({ generation: 'Writing the question', 'generation-repair': 'Repairing the question', validation: 'Checking answer roles', 'validation-repair': 'Checking the repaired answer', review: 'Reviewing quality', 'review-repair': 'Reviewing the repaired question', 'quality-review': 'Checking source support, notation and similarity' })[stage] ?? stage.replace(/-/g, ' ');
@@ -97,12 +103,17 @@ function qualityFindings(run: QuestionGenerationRun, item?: number): HTMLElement
   return section;
 }
 
-/** Compact default authoring surface; the existing editor retains advanced tools. */
 export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: string): Promise<void> {
   const root = el('section', { class: 'generation-workbench' });
   mount(outlet, root); mount(root, loadingState('Preparing your question workspace…'));
   try {
     const query = currentQuery();
+    const base = `#/instructor/course/${encodeURIComponent(courseId)}`;
+    if (query.has('advanced')) {
+      query.delete('advanced');
+      const search = query.toString();
+      history.replaceState(history.state, '', `${base}/preseeding${search ? `?${search}` : ''}`);
+    }
     const requestedRunId = query.get('runId');
     const [tree, coverage, materials, recent, queued, running, linkedRun] = await Promise.all([
       getCourseTree(courseId), getPreseeding(courseId), listMaterials(courseId),
@@ -112,7 +123,6 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       requestedRunId ? getContentRun(courseId, requestedRunId).catch(() => null) : null,
     ]);
     if (!root.isConnected) return;
-    const base = `#/instructor/course/${encodeURIComponent(courseId)}`;
     const runs = new Map([...recent, ...queued, ...running].map(run => [run._id, run]));
     let linkedRunId = '';
     if (linkedRun?.kind === 'question-generation') {
@@ -140,10 +150,13 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     if (!root.isConnected) return;
     let mode: 'setup' | 'live' = requestedRunId || submission || [...runs.values()].some(active) ? 'live' : 'setup';
     let busy = false;
-    let count = 3;
+    // Default lowered from 3 to 2 on 2026-11-23: with ~120 objectives a
+    // "Select coverage gaps" batch at 3 each was 360 questions to review.
+    let count = 2;
     let difficulty: Tier | 'balanced' = 'balanced';
     let focus: 'auto' | 'conceptual' | 'calculation' = 'auto';
-    let questionType: 'mcq' | 'true-false' = 'mcq';
+    const requestedType = query.get('type');
+    let questionType: 'mcq' | 'true-false' | 'hybrid' = requestedType === 'true-false' || requestedType === 'hybrid' ? requestedType : 'mcq';
     let bank: BankQuestion[] = [];
     // `selectedQuestion` is set only by an explicit click. Otherwise the reader
     // follows the live batch: `autoShown` is a saved draft displayed while its
@@ -174,10 +187,11 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
     let usageAgain = false;
     let usageTimer: ReturnType<typeof setTimeout> | undefined;
     const endingRuns = new Set<string>();
+    let retryingRunId = '';
     const runSnapshots = new Map<string, ContentRunSnapshot>();
     const watched = () => [...runs.values()].filter(run => run.kind === 'question-generation'
       && (!submission?.runIds || submission.runIds.includes(run._id) || run._id === linkedRunId));
-    const locked = () => busy || !!submission && (!submission.runIds || submission.runIds.some(id => !runs.has(id) || active(runs.get(id)!))) || [...runs.values()].some(active);
+    const locked = () => busy || !!retryingRunId || !!submission && (!submission.runIds || submission.runIds.some(id => !runs.has(id) || active(runs.get(id)!))) || [...runs.values()].some(active);
     const link = (label: string, path: string, primary = false) => el('a', { class: primary ? 'btn btn--primary' : 'gw-link', href: path, text: label });
     const notice = el('div', { class: 'gw-notice', role: 'status', hidden: true });
     const say = (text: string) => { notice.textContent = text; notice.hidden = !text; };
@@ -203,13 +217,17 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       el('div', { class: 'gw-pane-foot' }, link('Open questions to review →', `${base}/questions?tab=review`))), reader, progress);
 
     function cells(): GenerationPlanCell[] {
-      return objectives.filter(lo => selected.has(lo._id)).flatMap(lo => {
+      return objectives.filter(lo => selected.has(lo._id)).flatMap((lo, index) => {
         const result: GenerationPlanCell[] = [];
         for (let i = 0; i < count; i++) {
-          const tier: Tier = difficulty === 'balanced' ? (['easy','medium','hard','easy','medium'] as Tier[])[i] : difficulty;
-          const kind = focus !== 'auto' ? focus : lo.kind === 'calculation' ? 'calculation' : lo.kind === 'mixed' && i % 2 ? 'calculation' : 'conceptual';
-          const existing = result.find(cell => cell.difficulty === tier && cell.kind === kind);
-          if (existing) existing.count++; else result.push({ loId: lo._id, difficulty: tier, kind, type: questionType, count: 1 });
+          // Balanced and Hybrid rotate by objective, so a batch with fewer than
+          // three questions per objective still spans every tier and both types.
+          const tier: Tier = difficulty === 'balanced' ? (['easy','medium','hard'] as Tier[])[(i + index) % 3] : difficulty;
+          const type: GenerationPlanCell['type'] = questionType === 'hybrid' ? ((i + index) % 2 ? 'true-false' : 'mcq') : questionType;
+          // A true/false question is always a conceptual claim (generator contract).
+          const kind = type === 'true-false' ? 'conceptual' : focus !== 'auto' ? focus : lo.kind === 'calculation' ? 'calculation' : lo.kind === 'mixed' && i % 2 ? 'calculation' : 'conceptual';
+          const existing = result.find(cell => cell.difficulty === tier && cell.kind === kind && cell.type === type);
+          if (existing) existing.count++; else result.push({ loId: lo._id, difficulty: tier, kind, type, count: 1 });
         }
         return result;
       });
@@ -220,16 +238,21 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       const selectionSummary = el('p', { class: 'gw-selection' });
       const summary = el('aside', { class: 'gw-plan', 'aria-label': 'Batch summary' });
       const prompt = el('textarea', { id: 'gw-prompt', rows: 5, maxlength: 2000, placeholder: 'e.g. Use everyday situations to help students distinguish mass from weight. Include plausible misconceptions.' });
-      const amount = el('output', { 'aria-live': 'polite', text: '3' });
+      const amount = el('output', { 'aria-live': 'polite', text: String(count) });
       const minus = el('button', { type: 'button', 'aria-label': 'Fewer questions per objective', onclick: () => { count = Math.max(1,count-1); updateSetup(); } }, '−');
       const plus = el('button', { type: 'button', 'aria-label': 'More questions per objective', onclick: () => { count = Math.min(5,count+1); updateSetup(); } }, '+');
       const tiers = el('div', { class: 'gw-segments', role: 'group', 'aria-label': 'Difficulty' });
       const focusSelect = el('select', { id: 'gw-focus', onchange: () => { focus = focusSelect.value as typeof focus; updateSetup(); } },
         el('option', { value: 'auto', text: 'Match each objective' }), el('option', { value: 'conceptual', text: 'Conceptual understanding' }), el('option', { value: 'calculation', text: 'Calculation practice' }));
       const typeSelect = el('select', { id: 'gw-type', onchange: () => { questionType = typeSelect.value as typeof questionType; updateSetup(); } },
-        el('option', { value: 'mcq', text: 'Multiple choice' }), el('option', { value: 'true-false', text: 'True / false' }));
+        el('option', { value: 'mcq', text: 'Multiple choice' }), el('option', { value: 'true-false', text: 'True / false' }),
+        el('option', { value: 'hybrid', text: 'Mixed · multiple choice + true/false' }));
+      typeSelect.value = questionType;
+      const batchTotal = () => count * selected.size;
+      const savedDraftNote = el('small', { text: 'New questions are saved for your review.' });
+      const batchLimitWarning = el('p', { id: 'gw-batch-limit', class: 'gw-run-error gw-batch-limit', role: 'alert' });
       const generate = el('button', { class: 'btn btn--primary', type: 'button', onclick: async () => {
-        if (locked() || !selected.size) return;
+        if (locked() || !selected.size || batchTotal() > BATCH_MAX_QUESTIONS) return;
         linkedRunId = '';
         selectedQuestion = ''; autoShown = ''; previewPinned = false; previewRunId = ''; previewKey = ''; readerRevision++;
         submission ={ submissionId: crypto.randomUUID(), cells: cells(), prompt: prompt.value.trim() }; persist(); await submit();
@@ -248,9 +271,8 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
           el('label', { for: 'gw-prompt', class: 'gw-label', text: 'Instructions · optional' }), prompt,
           el('small', { class: 'gw-example-label', text: 'Example instructions · these only fill the text above' }),
           el('div', { class: 'gw-suggestions', 'aria-label': 'Example instructions' }, ...['Concept check', 'Apply a formula', 'Spot a misconception'].map((label,index) => el('button', { type: 'button', onclick: () => { prompt.value = ['Test conceptual understanding with a familiar everyday scenario.', 'Ask students to apply a formula and interpret the result.', 'Use plausible distractors to uncover common misconceptions.'][index]; prompt.focus(); } }, label))),
-          settings, el('details', { class: 'gw-advanced' }, el('summary', { text: 'More control' }),
-            el('p', {}, link('Open advanced generation →', `${base}/preseeding?advanced=1`)), el('small', { text: 'Combined objectives, saved setups and detailed distributions.' }))),
-          el('footer', { class: 'gw-footer' }, el('small', { text: 'New questions are saved for your review.' }), generate)), summary);
+          settings),
+          el('footer', { class: 'gw-footer' }, el('div', {}, savedDraftNote, batchLimitWarning), generate)), summary);
       updateSetup = () => {
         const focusKey = document.activeElement?.getAttribute('data-gw-focus');
         const isLocked = locked();
@@ -268,16 +290,23 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         objectivesList.scrollTop = scroll;
         if (focusKey) setup.querySelector<HTMLElement>(`[data-gw-focus="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
         selectionSummary.textContent = `${selected.size} ${selected.size === 1 ? 'objective' : 'objectives'} selected · ${count} ${count === 1 ? 'question' : 'questions'} each`;
-        const total = count * selected.size;
+        const total = batchTotal();
         generate.textContent = isLocked ? 'Generation in progress' : `Generate ${total} ${total === 1 ? 'question' : 'questions'} →`;
-        generate.disabled = isLocked || !total || cells().length > 120;
+        const overLimit = total > BATCH_MAX_QUESTIONS;
+        generate.disabled = isLocked || !total || overLimit;
+        savedDraftNote.hidden = overLimit;
+        const warning = overLimit
+          ? `This batch has ${total} questions. The limit is ${BATCH_MAX_QUESTIONS} per batch. Select fewer objectives or reduce the questions per objective.`
+          : '';
+        if (batchLimitWarning.textContent !== warning) batchLimitWarning.textContent = warning;
+        if (overLimit) generate.setAttribute('aria-describedby', batchLimitWarning.id);
+        else generate.removeAttribute('aria-describedby');
         const selectedSources = materials.filter(m => objectives.some(lo => selected.has(lo._id) && sourcesFor(lo).some(s => s._id === m._id)));
         mount(summary, el('h3', { text: 'YOUR BATCH' }), el('div', { class: 'gw-total' }, String(total), el('small', { text: total === 1 ? 'question' : 'questions' })), el('p', { class: 'gw-lead', text: `Across ${selected.size} learning ${selected.size === 1 ? 'objective' : 'objectives'}` }),
-          el('div', { class: 'gw-fact' }, 'Format', el('strong', { text: questionType === 'mcq' ? 'Multiple choice' : 'True / false' })), el('div', { class: 'gw-fact' }, 'Difficulty', el('strong', { text: difficulty === 'balanced' ? 'Mixed difficulty' : difficulty })),
+          el('div', { class: 'gw-fact' }, 'Format', el('strong', { text: questionType === 'mcq' ? 'Multiple choice' : questionType === 'true-false' ? 'True / false' : 'Multiple choice + true/false' })), el('div', { class: 'gw-fact' }, 'Difficulty', el('strong', { text: difficulty === 'balanced' ? 'Mixed difficulty' : difficulty })),
           el('div', { class: 'gw-fact' }, 'Practice focus', el('strong', { text: focus === 'auto' ? 'Match each objective' : focus === 'conceptual' ? 'Conceptual understanding' : 'Calculation practice' })),
           el('div', { class: 'gw-sources' }, el('h3', { text: 'SOURCE MATERIALS' }), ...selectedSources.map(source => el('p', {}, el('span', { text: source.name }), el('small', { text: 'Ready · assigned material' }))), !selectedSources.length && el('p', { text: 'Select an objective to see its sources.' })),
-          el('p', { class: 'gw-plan-note', text: 'You decide what students see. Generated drafts require approval and topic release.' }),
-          cells().length > 120 && el('p', { text: 'Choose fewer objectives for this batch.' }));
+          el('p', { class: 'gw-plan-note', text: 'You decide what students see. Generated drafts require approval and topic release.' }));
       };
       updateSetup();
     }
@@ -352,6 +381,23 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       say(failed ? `${failed} tasks could not be ended. Refresh the status and try again. Saved drafts are preserved.` : 'Generation ended. Saved drafts are preserved. Any model call already in progress may still finish.');
       drawLive(); scheduleRefresh();
     }
+
+    async function retryRun(run: QuestionGenerationRun): Promise<void> {
+      if (locked() || !canRetry(run)) return;
+      retryingRunId = run._id;
+      updateSetup();
+      drawLive();
+      try {
+        const { runId } = await retryContentRun(courseId, run._id);
+        if (root.isConnected) window.location.hash = `${base.slice(1)}/preseeding?runId=${encodeURIComponent(runId)}`;
+      } catch (error) {
+        retryingRunId = '';
+        if (!root.isConnected) return;
+        say(`Could not retry the task. ${generationIssue(message(error))}`);
+        updateSetup();
+        drawLive();
+      }
+    }
     function drawInspector(items: ContentRunSummary[], completed: number, total: number): void {
       const run = selectedRun();
       const question = bank.find(row => row.id === selectedQuestion);
@@ -391,7 +437,6 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         : el('p', { class: 'gw-plan-note', text: 'Select a question or task on the left to inspect its activity and usage.' }),
         submission && !submission.runIds && el('button', { type: 'button', class: 'btn btn--primary', disabled: busy, onclick: submit, text: 'Recover this batch' }),
         ...(submission?.errors ?? []).map(error => el('p', { class: 'gw-run-error', text: error })),
-        link('Manage runs & retries →', `${base}/preseeding?advanced=1`),
         submission?.runIds && !locked() && el('button', { type: 'button', class: 'btn btn--ghost', onclick: async () => {
           submission = undefined; persist(); mode = 'setup';
           try { const fresh = await getPreseeding(courseId); coverage.splice(0,coverage.length,...fresh); } catch { say('Could not refresh coverage. Check existing drafts before generating more.'); }
@@ -404,7 +449,7 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
       const shownRun: Partial<QuestionGenerationRun> & { updatedAt?: string } = { ...run };
       delete shownRun.preview; delete shownRun.revision; delete shownRun.updatedAt;
       const key = JSON.stringify([shownRun, snapshot, recorded, run && usageErrors.get(run._id), selectedQuestion, item,
-        completed, total, items.filter(active).length, endingRuns.size, busy, submission, Math.floor(Date.now() / 5000)]);
+        completed, total, items.filter(active).length, endingRuns.size, retryingRunId, locked(), submission, Math.floor(Date.now() / 5000)]);
       if (key === inspectorKey) return;
       inspectorKey = key;
       const scroll = progress.querySelector('.gw-inspector-body')?.scrollTop ?? 0;
@@ -415,6 +460,11 @@ export async function renderGenerationWorkbench(outlet: HTMLElement, courseId: s
         el('small', { text: `${items.filter(active).length} active tasks` })), details,
         el('footer', { class: 'gw-inspector-actions' },
           run && el('button', { type: 'button', class: 'gw-step-link', 'data-gw-focus': 'refresh-usage', onclick: () => refreshUsage(true), text: 'Refresh status & usage' }),
+          run && canRetry(run) && el('button', {
+            type: 'button', class: 'btn btn--secondary', 'data-gw-focus': `retry-${run._id}`, disabled: locked(),
+            busy: retryingRunId === run._id, title: 'Run the original request again', onclick: () => retryRun(run),
+            text: retryingRunId === run._id ? 'Retrying…' : 'Retry task',
+          }),
           run && active(run) && el('button', { type: 'button', class: 'btn btn--secondary', disabled: endingRuns.size > 0, 'data-gw-focus': `end-${run._id}`, onclick: () => endRuns([run]), text: endingRuns.has(run._id) ? 'Ending…' : 'End task' }),
           items.some(active) && el('button', { type: 'button', class: 'gw-step-link', disabled: endingRuns.size > 0, 'data-gw-focus': 'end-batch', onclick: () => endRuns(items), text: 'End batch' })));
       if (previousId === progress.dataset.runId) details.scrollTop = scroll;

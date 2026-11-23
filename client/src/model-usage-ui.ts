@@ -1,6 +1,31 @@
 import { el } from './dom.js';
-import type { ModelCallReceipt, ModelUsageSummary, ModelUsageTotals } from './api.js';
+import type { ModelCallReceipt, ModelCostEstimate, ModelUsageSummary, ModelUsageTotals } from './api.js';
 import { tokenCount, usageCoverageLabel, usageCoverageNote } from './model-usage-format.js';
+
+const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 6 });
+
+export function estimatedUsd(amount: number | null): string {
+  return amount === null ? 'Unavailable' : amount > 0 && amount < 0.000001 ? '<$0.000001' : usd.format(amount);
+}
+
+export function renderCostByModel(cost: ModelCostEstimate): HTMLElement | false {
+  if (!cost.models.length) return false;
+  return el('details', { class: 'mu-cost-models' }, el('summary', { text: 'Cost by model' }),
+    el('dl', { class: 'mu-cost-models__list' }, ...cost.models.flatMap(row => [
+      el('dt', {}, row.model, el('small', { text: row.provider })),
+      el('dd', {}, estimatedUsd(row.estimatedUsd), el('small', {
+        text: `${tokenCount(row.tokens)} tokens${row.unpricedCalls ? ` · ${row.unpricedCalls} unpriced` : ''}`,
+      })),
+    ])));
+}
+
+export function renderCostEstimate(cost: ModelCostEstimate | undefined, partial = false): HTMLElement | false {
+  if (!cost) return false;
+  const subtotal = partial || cost.unpricedCalls > 0;
+  return el('div', { class: 'mu-estimate' },
+    el('p', {}, `${subtotal ? 'Estimated subtotal' : 'Estimated cost'} (USD) `, el('strong', { text: estimatedUsd(cost.estimatedUsd) })),
+    renderCostByModel(cost));
+}
 
 export function renderTokenTotals(counts: Pick<ModelUsageTotals, 'inputTokens' | 'outputTokens' | 'totalTokens'>, compact = false): HTMLElement {
   return el('dl', { class: 'mu-totals' },
@@ -11,7 +36,7 @@ export function renderTokenTotals(counts: Pick<ModelUsageTotals, 'inputTokens' |
 export function renderModelUsage(summary: ModelUsageSummary, compact = false): HTMLElement {
   const root = el('section', { class: `model-usage${compact ? ' model-usage--compact' : ''}`, 'aria-label': 'Model token usage' },
     el('h3', { text: 'Model usage' }), el('p', { class: `mu-status mu-status--${summary.status}`, text: usageCoverageLabel(summary) }),
-    renderTokenTotals(summary, compact));
+    renderTokenTotals(summary, compact), renderCostEstimate(summary.cost, summary.status !== 'complete'));
   const notes = compact ? el('details', { class: 'mu-coverage' }, el('summary', { text: 'Usage coverage' })) : root;
   if (compact) root.append(notes);
   notes.append(el('p', { class: 'mu-note', text: usageCoverageNote(summary) }));

@@ -273,6 +273,32 @@ test('notification requests identify initial, timer and focus triggers without p
   }
 });
 
+test('a timer poll stops notification refreshes after a 401 while the old shell is still mounted', async ({ page }) => {
+  await fixture(page);
+  const triggers: string[] = [];
+  await page.route('**/api/notifications', route => {
+    triggers.push(route.request().headers()['x-financebot-trigger']);
+    return triggers.length === 1 ? route.fulfill({ json: [] }) : route.fulfill({ status: 401, json: { error: 'Authentication required.' } });
+  });
+  await page.clock.install();
+  await page.evaluate(async () => {
+    const { setUnauthorizedHandler } = await import('/js/api.js');
+    const { createNotificationBell } = await import('/js/notifications-bell.js');
+    setUnauthorizedHandler(() => { document.body.dataset.unauthorized = 'true'; });
+    document.body.append(createNotificationBell('admin'));
+  });
+  await expect.poll(() => triggers).toEqual(['notification-initial']);
+  await page.clock.runFor(30_000);
+  await expect(page.locator('body')).toHaveAttribute('data-unauthorized', 'true');
+  await page.clock.runFor(60_000);
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.clock.runFor(500);
+  expect(triggers).toEqual(['notification-initial', 'notification-timer']);
+});
+
 test('browser API failures report endpoints, HTTP status and server correlation without queries or response content', async ({ page }) => {
   await fixture(page);
   const reports: Array<{ kind: string; request: { endpoint: string; statusCode?: number; relatedRequestId?: string } }> = [];
@@ -625,4 +651,41 @@ test('Admin empty historical usage remains unavailable rather than zero', async 
   await expect(page.locator('.ac-metric strong').nth(3)).toHaveText('Unknown');
   await expect(page.locator('.ac-usage-overview')).toContainText('earlier or unrecorded activity cannot be reconstructed');
   await expect(page.locator('.ac-usage-overview')).toContainText('This is not billing');
+});
+
+test('Admin AI usage opens from the sidebar and shows cost by course and model', async ({ page }) => {
+  await fixture(page, '#/admin/operations', true);
+  const scopes: URL[] = [];
+  await page.route('**/api/admin/ai-usage?*', route => {
+    const url = new URL(route.request().url());
+    scopes.push(url);
+    const summary = { status: 'partial', totalTokens: 1_236_567, inputTokens: 1_234_567, outputTokens: 2_000, observedCalls: 4, reportedCalls: 3,
+      cost: { estimatedUsd: 0.024567, unpricedCalls: 1, models: [
+        { model: 'gpt-6-luna', provider: 'openai', tokens: 1_234_567, estimatedUsd: 0.024567, unpricedCalls: 0 },
+        { model: 'unpriced-model', provider: 'fixture', tokens: 2_000, estimatedUsd: null, unpricedCalls: 1 },
+      ] } };
+    const average = { tokens: 1200, estimatedUsd: 0.0024, savedQuestions: 10 };
+    return route.fulfill({ json: { summary, average, truncated: false, courses: [
+      { courseId, name: 'Finance', courseCode: 'FIN 101', tokens: 1_234_567, estimatedUsd: 0.024567, average },
+      { courseId: null, tokens: 2_000, estimatedUsd: null, partial: true, average: null },
+    ] } });
+  });
+  await page.getByRole('link', { name: 'AI Usage & Cost', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'AI Usage & Cost', exact: true })).toBeVisible();
+  await expect(page.locator('.ac-ai-usage__metric dd')).toHaveText(['1.237M', '$0.025', '1.2K', '$0.002']);
+  await expect(page.locator('.ac-ai-usage__metric small').first()).toHaveText('1.235M input · 2K output');
+  const courses = page.getByRole('region', { name: 'Course usage table' });
+  await expect(courses.getByRole('row', { name: /FIN 101/ }).getByRole('cell')).toHaveText([
+    '1,234,567', '$0.025', '1,200', '$0.002', '10',
+  ]);
+  await expect(courses).toContainText('No course assigned');
+  await page.getByRole('searchbox', { name: 'Find a course' }).fill('FIN 101');
+  await expect(courses.getByRole('row')).toHaveCount(2);
+  await expect(page.getByRole('row', { name: /gpt-6-luna/ }).getByRole('cell')).toHaveText([
+    '1,234,567', '$0.025', '0',
+  ]);
+  await page.getByRole('combobox', { name: 'Reporting period' }).selectOption('30');
+  await expect.poll(() => scopes.at(-1)?.searchParams.has('from')).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

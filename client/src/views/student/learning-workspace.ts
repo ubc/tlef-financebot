@@ -8,6 +8,21 @@ import { renderLearningSummary, remainingQuestion } from './learning-summary.js'
 
 export function rich(text: string, className = '') { const node = el('div', { class: className }); renderRichText(node, text); return node; }
 export function button(text: string, action: () => unknown, className = 'btn btn--ghost btn--sm') { return el('button', { class: className, type: 'button', text, onclick: action }); }
+
+export function learningOption(
+  option: { key: string; text: string },
+  state: { selected: boolean; disabled: boolean; reveal?: { correct: boolean; explanation: string } },
+  onSelect: () => void,
+): HTMLButtonElement {
+  return el('button', {
+    class: `learning-option${state.selected ? ' is-selected' : ''}${state.reveal?.correct ? ' is-correct' : ''}`,
+    type: 'button',
+    disabled: state.disabled,
+    'aria-pressed': String(state.selected),
+    onclick: onSelect,
+  }, el('span', { class: 'mono', text: option.key }), rich(option.text),
+  state.reveal ? rich(state.reveal.explanation, 'learning-explanation') : false);
+}
 export function select(label: string, choices: Array<[string, string]>, value: string, action: (value: string) => void) {
   const node = el('select', { class: 'input', 'aria-label': label, onchange: () => action(node.value) }, ...choices.map(([id, text]) => el('option', { value: id, text }))); node.value = value; return node;
 }
@@ -106,13 +121,15 @@ export async function renderLearningWorkspace(outlet: HTMLElement, courseId: str
       const options = el('div', { class: 'learning-options' });
       for (const option of current.options) {
         const reveal = current.revealed?.find(r => r.key === option.key);
-        const optionNode = el('button', { class: `learning-option${selected === option.key ? ' is-selected' : ''}${reveal?.correct ? ' is-correct' : ''}`, type: 'button', disabled: !!current.answer || state.kind === 'browse' || state.kind === 'cards', 'aria-pressed': String(selected === option.key), onclick: () => {
+        const optionNode = learningOption(option, {
+          selected: selected === option.key, disabled: !!current.answer || state.kind === 'browse' || state.kind === 'cards', reveal,
+        }, () => {
           if (transitioning) return;
           selected = option.key;
           options.querySelectorAll('button').forEach(node => { const chosen = node === optionNode; node.classList.toggle('is-selected', chosen); node.setAttribute('aria-pressed', String(chosen)); });
           const submit = root.querySelector<HTMLButtonElement>('.learning-navigation .btn--instr-primary'); if (submit) submit.disabled = false;
           void change({ action: 'draft', key: option.key });
-        } }, el('span', { class: 'mono', text: option.key }), rich(option.text), reveal ? rich(reveal.explanation, 'learning-explanation') : false);
+        });
         options.append(optionNode);
       }
       body.append(options);

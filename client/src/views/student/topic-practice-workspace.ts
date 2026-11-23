@@ -6,7 +6,7 @@ import { learningApi, type LearningLibrary } from '../../student-learning-api.js
 import { emptyState, errorState, loadingState } from '../../ui.js';
 import { maybeStartStudentTutorial } from '../../tutorials.js';
 import type { StudentExperience } from './experience.js';
-import { button, dialog, questionTile, rich } from './learning-workspace.js';
+import { button, dialog, learningOption, questionTile, rich } from './learning-workspace.js';
 import { renderLearningSummary } from './learning-summary.js';
 
 interface QuestionEntry {
@@ -196,10 +196,11 @@ export async function renderTopicPracticeWorkspace(
         if (q.watermark) body.append(el('small', { class: 'muted', text: q.watermark }));
         body.append(el('div', { class: 'learning-options' }, ...q.options.map(option => {
           const reveal = entry.result?.feedback.revealed.find(r => r.key === option.key);
-          return el('button', {
-            class: `learning-option${entry.selected === option.key ? ' is-selected' : ''}${reveal?.correct ? ' is-correct' : ''}`, type: 'button', disabled: busy || !!entry.result,
-            'aria-pressed': String(entry.selected === option.key), 'data-control': `option-${option.key}`, onclick: () => { entry.selected = option.key; draw(); },
-          }, el('span', { class: 'mono', text: option.key }), rich(option.text), reveal ? rich(reveal.explanation, 'learning-explanation') : false);
+          const control = learningOption(option, {
+            selected: entry.selected === option.key, disabled: busy || !!entry.result, reveal,
+          }, () => { entry.selected = option.key; draw(); });
+          control.dataset.control = `option-${option.key}`;
+          return control;
         })));
         if (entry.result) {
           body.append(el('div', { class: 'learning-feedback', role: 'status', text: entry.result.correct ? 'Correct! Continue when you are ready.' : entry.result.feedback.retry ? 'Review your answer, then continue to the follow-up question.' : 'Review the explanation, then continue to the next question.' }));

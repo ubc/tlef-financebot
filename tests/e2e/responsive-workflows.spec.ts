@@ -24,7 +24,7 @@ async function expectNoHorizontalClipping(page: Page): Promise<void> {
   const result = await page.locator('.outlet').evaluate((outlet) => {
     const outletRect = outlet.getBoundingClientRect();
     const candidates = Array.from(outlet.querySelectorAll(
-      'input, textarea, select, button, a.btn, article, section, table, .bank-row > *, .queue-row > *, .preseeding-row > *',
+      'input, textarea, select, button, a.btn, article, section, table, .bank-row > *, .queue-row > *',
     ));
     const clipped = candidates
       .filter((element) => {
@@ -138,7 +138,7 @@ test.describe('responsive cross-role workflows', () => {
       { path: '/admin/platform-settings', heading: 'Platform Settings' },
       { path: `/instructor/course/${courseId}/questions?tab=approved`, heading: 'Questions' },
       { path: `/instructor/course/${courseId}/questions?tab=review`, heading: 'Questions' },
-      { path: `/instructor/course/${courseId}/preseeding`, heading: 'Question Bank Coverage' },
+      { path: `/instructor/course/${courseId}/preseeding`, heading: 'Generate questions' },
       { path: `/instructor/course/${courseId}/tas`, heading: 'Teaching Assistants' },
       { path: `/instructor/course/${courseId}/analytics`, heading: 'Student Analytics' },
       { path: `/instructor/course/${courseId}/materials`, heading: 'Course Knowledge Workspace' },
